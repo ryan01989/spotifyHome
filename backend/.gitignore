@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+
+# Files created by this set up:
+.venv/
+dist/
+build/
+
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
