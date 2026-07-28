@@ -7,13 +7,18 @@
 .stage {
   position: relative;
   width: 720px;
-  min-height: 720px;
+  height: 720px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   touch-action: none;
+  /* The real hardware is a round display, so anything past this edge is
+     physically invisible. Clip to the same circle here so dev in a
+     rectangular browser window matches what the device will actually show. */
+  border-radius: 50%;
+  overflow: hidden;
 }
 
 .gesture-surface {

@@ -34,6 +34,7 @@ export function NowPlayingProvider({ children }) {
     return () => clearTimeout(timeoutRef.current)
   }, [fetchNowPlaying, scheduleNextPoll])
 
+  
   const applyNowPlaying = useCallback((data) => {
     ignoreStartedBeforeRef.current = Date.now()
     setNowPlaying(data)

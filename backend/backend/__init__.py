@@ -6,8 +6,8 @@ from backend.logging import init_logging
 
 
 def create_app(config_overrides=None):
-    load_dotenv()  # should run before anything reads env vars (config, logging)
-    init_logging()  # should be configured before any access to app.logger
+    load_dotenv()
+    init_logging()
 
     app = Flask(__name__)
     app.config.from_object("backend.defaults")

@@ -12,10 +12,9 @@ export default function App() {
 
   // nowPlaying.is_playing only updates after a network round-trip, so a
   // second tap arriving before that lands would still see the pre-tap
-  // state and fire the same action twice (e.g. pause while already
-  // paused, which Spotify rejects as a restriction violation). Track the
-  // intended state locally and flip it the instant we act on it; defer
-  // back to server truth once a fresh poll confirms it.
+  // state 
+  // Track the state locally and flip when the user acts; defer
+  // back to server truth once a poll confirms it.
   const [optimisticPlaying, setOptimisticPlaying] = useState(null)
   useEffect(() => {
     setOptimisticPlaying(null)

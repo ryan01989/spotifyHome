@@ -1,6 +1,5 @@
-// Shared across all four actions so a burst of taps/swipes (duplicate
-// pointer events, accidental double-fire, etc.) can't hammer Spotify's
-// rate limiter — only the first call in a cooldown window goes through.
+// Shared across all four actions so a burst of taps/swipes 
+// Spotify's rate limiter is bunk, so try to avoid it.
 const ACTION_COOLDOWN_MS = 200
 let lastActionAt = 0
 

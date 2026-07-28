@@ -3,7 +3,7 @@ import os
 
 
 # Since logging is initialized before the application, can't use
-# app.debug here, relying on FLASK_DEBUG env var only.
+# app.debug here, rely on FLASK_DEBUG env var.
 def _is_debug():
     flag = os.getenv("FLASK_DEBUG", "").lower()
     return flag == "true" or flag == "1"

@@ -14,8 +14,8 @@ export default function WarpedCover({ src, size = 720, className, style }) {
       try {
         warpSquareToCircle(img, canvas, size)
       } catch (err) {
-        // Cover art host didn't allow cross-origin pixel reads (tainted
-        // canvas) — fall back to a plain center crop instead of a blank circle.
+        // Cover art host didn't allow cross-origin pixel reads
+        // fall back to a plain center crop instead of a blank circle.
         console.error('Cover warp failed, falling back to a cropped circle:', err)
         canvas.width = size
         canvas.height = size

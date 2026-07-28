@@ -36,7 +36,6 @@ def current_track():
 @bp.route("/now_playing")
 def now_playing():
     now_playing = get_playing()
-    # app.logger.info(f"Now playing: {now_playing}")
     return jsonify(now_playing)
 
 
