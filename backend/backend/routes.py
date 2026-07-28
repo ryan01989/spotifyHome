@@ -2,6 +2,7 @@ import os
 
 from flask import Blueprint, jsonify, render_template, send_from_directory
 from flask import current_app as app
+from backend.spotify_api import get_current_track, get_playing, pause_playback, resume_playback, next_track, previous_track
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -26,7 +27,40 @@ def cover_file(filename):
     return send_from_directory(PUBLIC_DIR, filename)
 
 
-@bp.route("/current_cover")
-def covers():
-    current_cover = "redveilAlbumCover.jpg"
-    return jsonify({"cover": f"/api/cover/{current_cover}"})
+@bp.route("/current_track")
+def current_track():
+    current_track = get_current_track()
+    return jsonify(current_track)
+
+
+@bp.route("/now_playing")
+def now_playing():
+    now_playing = get_playing()
+    # app.logger.info(f"Now playing: {now_playing}")
+    return jsonify(now_playing)
+
+
+def _action_response(now_playing):
+    if now_playing is None:
+        return jsonify({"success": False}), 502
+    return jsonify({"success": True, "now_playing": now_playing})
+
+
+@bp.route("/pause_playback", methods=["POST"])
+def pause_playback_route():
+    return _action_response(pause_playback())
+
+
+@bp.route("/resume_playback", methods=["POST"])
+def resume_playback_route():
+    return _action_response(resume_playback())
+
+
+@bp.route("/next_track", methods=["POST"])
+def next_track_route():
+    return _action_response(next_track())
+
+
+@bp.route("/previous_track", methods=["POST"])
+def previous_track_route():
+    return _action_response(previous_track())

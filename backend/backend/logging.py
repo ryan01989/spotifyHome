@@ -30,6 +30,11 @@ def init_logging():
                 "level": "DEBUG" if _is_debug() else "INFO",
                 "handlers": ["wsgi"],
             },
+            "loggers": {
+                "werkzeug": {"level": "WARNING"},
+                "spotipy": {"level": "WARNING"},
+                "urllib3": {"level": "WARNING"},
+            },
             "disable_existing_loggers": False,
         }
     )

@@ -1,31 +1,60 @@
 import { useEffect, useState } from 'react'
-import Album from './album'
+import CurrentTrackCover from './currentTrackCover'
+import CurrentTrackInfo from './currentTrackInfo'
+import { useNowPlaying } from './NowPlayingContext'
+import { useSwipeGesture } from './useSwipeGesture'
+import { playNext, playPrevious, pausePlayback, resumePlayback } from './playbackActions'
+import { useSimulatedProgress } from './formatTime'
 import './App.css'
 
-const TRACK_SECONDS = 30
-
 export default function App() {
-  const [elapsed, setElapsed] = useState(0)
+  const { nowPlaying, applyNowPlaying } = useNowPlaying()
 
+  // nowPlaying.is_playing only updates after a network round-trip, so a
+  // second tap arriving before that lands would still see the pre-tap
+  // state and fire the same action twice (e.g. pause while already
+  // paused, which Spotify rejects as a restriction violation). Track the
+  // intended state locally and flip it the instant we act on it; defer
+  // back to server truth once a fresh poll confirms it.
+  const [optimisticPlaying, setOptimisticPlaying] = useState(null)
   useEffect(() => {
-    const id = setInterval(() => {
-      setElapsed((e) => (e + 1) % TRACK_SECONDS)
-    }, 1000)
-    return () => clearInterval(id)
-  }, [])
+    setOptimisticPlaying(null)
+  }, [nowPlaying?.is_playing])
 
-  const progress = (elapsed / TRACK_SECONDS) * 100
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0')
-  const ss = String(elapsed % 60).padStart(2, '0')
+  const isPlaying = optimisticPlaying ?? nowPlaying?.is_playing ?? false
+  const displayProgressMs = useSimulatedProgress(nowPlaying?.progress_ms, nowPlaying?.duration_ms, isPlaying)
+
+  const handleNext = async () => {
+    const data = await playNext()
+    if (data?.now_playing) applyNowPlaying(data.now_playing)
+  }
+
+  const handlePrevious = async () => {
+    const data = await playPrevious()
+    if (data?.now_playing) applyNowPlaying(data.now_playing)
+  }
+
+  const handleTogglePlay = async (shouldPlay) => {
+    setOptimisticPlaying(shouldPlay)
+    const data = await (shouldPlay ? resumePlayback() : pausePlayback())
+    if (data?.now_playing) applyNowPlaying(data.now_playing)
+  }
+
+  const { dragX, isDragging, isAnimatingOut, handlers } = useSwipeGesture({
+    isPlaying,
+    onNext: handleNext,
+    onPrevious: handlePrevious,
+    onTogglePlay: handleTogglePlay,
+  })
 
   return (
-    <div className="stage">
-      <Album />
-      <div className="meta">
-        <div className="progress-track">
-          <div className="progress-fill" style={{ transform: `scaleX(${progress / 100})` }} />
-        </div>
-        <span className="time">{mm}:{ss}</span>
+    <div className="stage" {...handlers}>
+      <div
+        className={`gesture-surface${isDragging ? ' is-dragging' : ''}${isAnimatingOut ? ' is-animating-out' : ''}`}
+        style={{ transform: `translateX(${dragX}px)` }}
+      >
+        <CurrentTrackCover />
+        <CurrentTrackInfo progressMs={displayProgressMs} />
       </div>
     </div>
   )

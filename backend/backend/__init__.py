@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 from flask import Flask
 
 from backend import routes
@@ -5,6 +6,7 @@ from backend.logging import init_logging
 
 
 def create_app(config_overrides=None):
+    load_dotenv()  # should run before anything reads env vars (config, logging)
     init_logging()  # should be configured before any access to app.logger
 
     app = Flask(__name__)
