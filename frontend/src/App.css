@@ -8,6 +8,7 @@
   position: relative;
   width: 720px;
   height: 720px;
+  background: #111;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -30,12 +31,46 @@
   will-change: transform;
 }
 
-.gesture-surface.is-dragging {
+.gesture-surface.is-dragging,
+.gesture-surface.is-snapping {
   transition: none;
 }
 
-.gesture-surface.is-animating-out {
+.gesture-surface.is-exiting {
   transition: transform 220ms ease-in;
+}
+
+.gesture-surface.is-entering {
+  transition: transform 220ms ease-out;
+}
+
+/* Track info dissolves in place instead of sliding with the gesture surface. */
+.track-info.is-dragging,
+.meta.is-dragging {
+  transition: none;
+}
+
+.track-info.is-exiting,
+.meta.is-exiting {
+  opacity: 0;
+  transition: opacity 220ms ease-in;
+}
+
+.track-info.is-snapping,
+.meta.is-snapping {
+  opacity: 0;
+  transition: none;
+}
+
+.track-info.is-entering,
+.meta.is-entering {
+  opacity: 1;
+  transition: opacity 220ms ease-out;
+}
+
+.track-info.is-fading,
+.meta.is-fading {
+  opacity: 0;
 }
 
 .album-cover {
@@ -44,7 +79,6 @@
   justify-content: center;
   align-items: center;
   border-radius: 50%;
-  border: 1px solid var(--border);
   background: #111;
   will-change: transform;
 
@@ -82,6 +116,8 @@
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
+  opacity: 1;
+  transition: opacity 220ms ease;
 }
 
 .track-info {
@@ -98,20 +134,62 @@
   text-align: center;
   color: #ddd;
   font-family: sans-serif;
+  opacity: 1;
+  transition: opacity 220ms ease;
+}
+
+.track-name-wrap {
+  position: relative;
+  max-width: 600px;
+  width: fit-content;
+  overflow: hidden;
+}
+
+.track-name-wrap.is-overflowing {
+  mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
 }
 
 .track-name {
+  display: inline-block;
   text-wrap: nowrap;
-  overflow: hidden;
   font-size: 3rem;
   line-height: 1.2;
   font-weight: 600;
-  width: fit-content;
   height: fit-content;
 }
 
+.track-name-track {
+  display: flex;
+  width: max-content;
+  animation-name: track-name-marquee;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.track-name-track .track-name {
+  flex-shrink: 0;
+  margin-right: var(--marquee-gap);
+}
+
+.track-name-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@keyframes track-name-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
 .track-artist {
-  font-size: 0.9rem;
+  font-size: 1.25rem;
   opacity: 0.8;
 }
 
@@ -138,8 +216,15 @@
   transition: transform 200ms linear;
 }
 
+.time-row {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
 .time {
   color: #ddd;
+  opacity: 0.8;
   font-family: sans-serif;
   font-variant-numeric: tabular-nums;
 }

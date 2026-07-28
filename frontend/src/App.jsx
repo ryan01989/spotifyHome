@@ -39,7 +39,7 @@ export default function App() {
     if (data?.now_playing) applyNowPlaying(data.now_playing)
   }
 
-  const { dragX, isDragging, isAnimatingOut, handlers } = useSwipeGesture({
+  const { dragX, phase, handlers } = useSwipeGesture({
     isPlaying,
     onNext: handleNext,
     onPrevious: handlePrevious,
@@ -49,12 +49,12 @@ export default function App() {
   return (
     <div className="stage" {...handlers}>
       <div
-        className={`gesture-surface${isDragging ? ' is-dragging' : ''}${isAnimatingOut ? ' is-animating-out' : ''}`}
+        className={`gesture-surface${phase !== 'idle' ? ` is-${phase}` : ''}`}
         style={{ transform: `translateX(${dragX}px)` }}
       >
         <CurrentTrackCover />
-        <CurrentTrackInfo progressMs={displayProgressMs} />
       </div>
+      <CurrentTrackInfo progressMs={displayProgressMs} phase={phase} dragX={dragX} />
     </div>
   )
 }

@@ -3,7 +3,9 @@ const SQRT2 = Math.sqrt(2)
 // Inverse elliptical grid mapping: given a point (x, y) in the unit disc,
 // find the corresponding point (u, v) in the unit square that the forward
 // mapping x = u*sqrt(1 - v^2/2), y = v*sqrt(1 - u^2/2) would have produced.
-function discToSquare(x, y) {
+// `strength` blends toward that mapping (0 = untouched square, 1 = the true
+// mapping); values above 1 extrapolate past it for a more exaggerated pull.
+function discToSquare(x, y, strength = 1) {
   const x2 = x * x
   const y2 = y * y
 
@@ -12,12 +14,15 @@ function discToSquare(x, y) {
   const v = 0.5 * Math.sqrt(Math.max(0, 2 - x2 + y2 + 2 * y * SQRT2)) -
     0.5 * Math.sqrt(Math.max(0, 2 - x2 + y2 - 2 * y * SQRT2))
 
-  return [u, v]
+  return [
+    x + (u - x) * strength,
+    y + (v - y) * strength,
+  ]
 }
 
 // Draws `image` into `canvas` warped so the full square image fills a circle
 // (corners stretched inward) instead of being cropped to one.
-export function warpSquareToCircle(image, canvas, size) {
+export function warpSquareToCircle(image, canvas, size, strength = 1.2) {
   canvas.width = size
   canvas.height = size
 
@@ -39,7 +44,7 @@ export function warpSquareToCircle(image, canvas, size) {
       const nx = (px - radius) / radius
       if (nx * nx + ny * ny > 1) continue // outside the circle: leave transparent
 
-      const [u, v] = discToSquare(nx, ny)
+      const [u, v] = discToSquare(nx, ny, strength)
       const sx = Math.min(size - 1, Math.max(0, Math.round((u * 0.5 + 0.5) * (size - 1))))
       const sy = Math.min(size - 1, Math.max(0, Math.round((v * 0.5 + 0.5) * (size - 1))))
 
