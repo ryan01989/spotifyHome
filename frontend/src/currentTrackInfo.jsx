@@ -83,6 +83,12 @@ export default function CurrentTrackInfo({ progressMs, phase, dragX }) {
                     <div
                         className="track-name-track"
                         style={{
+                            // Set explicitly rather than relying on the CSS
+                            // `width: max-content` fallback — that's been
+                            // unreliable on flex containers in some WebKit
+                            // builds, and we already have the true width
+                            // measured here anyway.
+                            width: `${titleWidth * 2 + TITLE_MARQUEE_GAP_PX}px`,
                             animationDuration: `${marqueeDuration}s`,
                             '--marquee-gap': `${TITLE_MARQUEE_GAP_PX}px`,
                         }}

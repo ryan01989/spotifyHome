@@ -80,7 +80,6 @@
   align-items: center;
   border-radius: 50%;
   background: #111;
-  will-change: transform;
 
   .current {
     width: var(--image-diameter-background);
@@ -173,9 +172,8 @@
 
 .track-name-measure {
   position: absolute;
-  top: 0;
-  left: 0;
-  visibility: hidden;
+  top: -9999px;
+  left: -9999px;
   pointer-events: none;
 }
 

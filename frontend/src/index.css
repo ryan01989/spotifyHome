@@ -56,6 +56,10 @@ body {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
+  /* Matches .stage's background so any sub-pixel gap between the viewport
+     and the nominal 720x720 (from DRM mode-setting rounding, etc.) blends
+     in instead of showing up as a bright edge. */
+  background: #111;
 }
 
 #root {

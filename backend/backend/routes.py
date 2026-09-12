@@ -35,8 +35,10 @@ def current_track():
 
 @bp.route("/now_playing")
 def now_playing():
+    prev = get_playing("last")
     now_playing = get_playing()
-    return jsonify(now_playing)
+    next = get_playing("next")
+    return jsonify({"prev": prev, "now_playing": now_playing, "next": next})
 
 
 def _action_response(now_playing):

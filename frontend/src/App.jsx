@@ -8,12 +8,11 @@ import { useSimulatedProgress } from './formatTime'
 import './App.css'
 
 export default function App() {
-  const { nowPlaying, applyNowPlaying } = useNowPlaying()
+  const { nowPlaying, applyNowPlaying, applyPreloadedTrack, reconcileNowPlaying } = useNowPlaying()
 
   // nowPlaying.is_playing only updates after a network round-trip, so a
   // second tap arriving before that lands would still see the pre-tap
-  // state 
-  // Track the state locally and flip when the user acts; defer
+  // state. Track the state locally and flip when the user acts; defer
   // back to server truth once a poll confirms it.
   const [optimisticPlaying, setOptimisticPlaying] = useState(null)
   useEffect(() => {
@@ -23,14 +22,20 @@ export default function App() {
   const isPlaying = optimisticPlaying ?? nowPlaying?.is_playing ?? false
   const displayProgressMs = useSimulatedProgress(nowPlaying?.progress_ms, nowPlaying?.duration_ms, isPlaying)
 
-  const handleNext = async () => {
-    const data = await playNext()
-    if (data?.now_playing) applyNowPlaying(data.now_playing)
+  // If the neighboring track has already been preloaded, show it the
+  // instant the swipe commits and reconcile with the real response once it
+  // lands in the background. Otherwise fall back to waiting on the request
+  // itself, so the swipe never reveals stale (pre-skip) track info.
+  const handleNext = () => {
+    const preloaded = applyPreloadedTrack('next')
+    const request = playNext().then((data) => reconcileNowPlaying(data?.now_playing ?? null))
+    if (!preloaded) return request
   }
 
-  const handlePrevious = async () => {
-    const data = await playPrevious()
-    if (data?.now_playing) applyNowPlaying(data.now_playing)
+  const handlePrevious = () => {
+    const preloaded = applyPreloadedTrack('prev')
+    const request = playPrevious().then((data) => reconcileNowPlaying(data?.now_playing ?? null))
+    if (!preloaded) return request
   }
 
   const handleTogglePlay = async (shouldPlay) => {
