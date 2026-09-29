@@ -32,7 +32,7 @@ flowchart LR
 
   subgraph HW["«hardware»"]
     PANEL["Waveshare 4in 720×720<br/>round HDMI panel"]
-    TB["TB6612FNG ch.B → N20 motor"]
+    DRV["TB6612FNG ch.B → N20 motor"]
     HALL["Hall quadrature encoder<br/>GPIO23 / GPIO24"]
   end
 
@@ -52,7 +52,7 @@ flowchart LR
   VCG -. "best-effort power" .-> PANEL
   FLASK -- "pigpio socket" --> PIGPIOD
   MON -- "pigpio socket" --> PIGPIOD
-  PIGPIOD -- "20 kHz HW PWM<br/>GPIO16/18/20/21" --> TB
+  PIGPIOD -- "20 kHz HW PWM<br/>GPIO16/18/20/21" --> DRV
   HALL -- "gpiozero edge callbacks" --> FLASK
   NFC -- "POST /api/sleep, /api/wake" --> FLASK
   MAC -. "dev only" .-> FLASK
@@ -73,7 +73,7 @@ dependencies.
 classDiagram
   direction TB
 
-  class app_factory["backend/__init__"] {
+  class app_factory["backend package (create_app)"] {
     <<module>>
     +FRONTEND_DIST: Path
     +create_app(config_overrides) Flask
@@ -271,8 +271,14 @@ classDiagram
     renders black stage when asleep
   }
 
-  class CurrentTrackCover { <<component>> }
-  class WarpedCover { <<component>> +src +size }
+  class CurrentTrackCover {
+    <<component>>
+  }
+  class WarpedCover {
+    <<component>>
+    +src
+    +size
+  }
   class CurrentTrackInfo {
     <<component>>
     +progressMs
@@ -311,7 +317,9 @@ classDiagram
     +warpSquareToCircle(image, canvas, size, strength)
   }
 
-  class API["Flask /api/*"] { <<external>> }
+  class API["Flask /api"] {
+    <<external>>
+  }
 
   main *-- SpinProvider
   SpinProvider *-- NowPlayingProvider

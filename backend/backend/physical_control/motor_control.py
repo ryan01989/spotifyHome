@@ -36,17 +36,14 @@ HOP_START_DURATION_S = 0.12
 CONTROLLED_STOP_DURATION_S = 1.0
 CONTROLLED_STOP_STEP_S = 0.02
 
-# step(): brief opposing pulse used by haptic_feedback for a physical "click".
+# step(): brief opposing pulse volume.py uses for a physical "click".
 STEP_SPEED_PERCENT = 40
 STEP_DURATION_S = 0.04
 
-# How long after the motor stops the wheel may still be coasting from what
-# the motor did. volume.py reads is_driving()/is_stepping() so motor-driven
-# motion never gets mistaken for the user turning the wheel.
-DRIVE_COAST_SETTLE_S = 0.25
-# Must outlast DRIVE_COAST_SETTLE_S, so a step()'s own coast-down never
-# starts reporting as continuous drive once the step window expires.
-STEP_SETTLE_S = DRIVE_COAST_SETTLE_S + 0.1
+# This module doesn't report whether the wheel is moving under its own power.
+# volume.py tells motor motion from user motion by when it's armed (between a
+# halt and RESTART_IDLE_SEC of stillness), not by asking the motor. See the
+# volume-knob TODOs in CLAUDE.md for what that doesn't cover.
 
 _lock = threading.Lock()
 _init_lock = threading.Lock()
@@ -57,8 +54,6 @@ _hardware_attempted = False
 _current_speed_percent = 0.0
 _current_direction = DIRECTION_CW
 _generation = 0  # bumped on every new command; lets stale ramp/pulse threads bail out
-_drive_stopped_at = 0.0  # monotonic time the motor last went from moving to idle
-_step_active_until = 0.0  # monotonic deadline for the current step() pulse + settle
 
 
 def _init_hardware():
@@ -105,11 +100,8 @@ def _init_hardware():
 
 def _drive_locked(speed_percent, direction):
     """Set direction pins + PWM duty for continuous drive. Caller holds _lock."""
-    global _current_speed_percent, _current_direction, _drive_stopped_at
+    global _current_speed_percent, _current_direction
     speed_percent = max(0.0, min(100.0, speed_percent))
-
-    if speed_percent == 0 and _current_speed_percent > 0:
-        _drive_stopped_at = time.monotonic()
 
     if _hardware_available:
         if speed_percent == 0:
@@ -212,7 +204,7 @@ def stop_immediately():
 
 def step(movement_direction, speed_percent=STEP_SPEED_PERCENT, duration_s=STEP_DURATION_S):
     """Fire a brief pulse opposite movement_direction - the physical "click"
-    haptic_feedback uses to push back against the user's spin. Non-blocking,
+    volume.py uses to push back against the user's spin. Non-blocking,
     safe to call rapidly from the encoder callback."""
     _init_hardware()
     opposite = DIRECTION_CCW if movement_direction == DIRECTION_CW else DIRECTION_CW
