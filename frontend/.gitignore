@@ -8,8 +8,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
-dist-ssr
+# dist/ is intentionally committed — the Pi pulls the prebuilt bundle and
+# Flask serves it statically, so node/npm never has to run there.
 *.local
 
 # Editor directories and files

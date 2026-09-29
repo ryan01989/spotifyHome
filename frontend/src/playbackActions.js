@@ -34,3 +34,11 @@ export function pausePlayback() {
 export function resumePlayback() {
   return postAction('/api/resume_playback')
 }
+
+export function wakeDisplay() {
+  return postAction('/api/wake')
+}
+
+export function sleepDisplay() {
+  return postAction('/api/sleep')
+}

@@ -1,40 +1,132 @@
+import logging
 import os
 import time
-from tokenize import String
+from pathlib import Path
 
 import spotipy
 from spotipy.cache_handler import CacheFileHandler
+from spotipy.exceptions import SpotifyOauthError
+
+from backend.physical_control import volume as volume_control
+
+log = logging.getLogger(__name__)
+
+SCOPE = (
+    "user-read-playback-state user-modify-playback-state user-read-playback-position"
+    " user-read-currently-playing user-read-recently-played"
+)
+
+# A bare CacheFileHandler() resolves .cache against the *current working
+# directory*, so the token cache silently moves depending on where the app was
+# launched from — start it from the wrong directory and it looks like a fresh,
+# never-authorized install. Anchor it to backend/ (this file's package parent)
+# instead, which is where the cache has always lived.
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent / ".cache"
 
 _spotify_client = None
+_auth_manager = None
+
+
+class SpotifyAuthRequired(Exception):
+    """Raised when there's no usable cached token to talk to Spotify with.
+
+    Recovering means running the OAuth flow, which needs a human with a
+    browser — so it happens out-of-band (`python -m backend.authorize`), never
+    inside a request.
+    """
+
+    def __init__(self, authorize_url=None):
+        super().__init__(
+            "Spotify authorization required — run `python -m backend.authorize` "
+            "from the backend/ directory."
+        )
+        self.authorize_url = authorize_url
+
+
+class _HeadlessSpotifyOAuth(spotipy.SpotifyOAuth):
+    # SpotifyOAuth's fallback, whenever it can't satisfy a token request from
+    # cache, is to *prompt*: open a browser and block on input() waiting for
+    # the pasted redirect URL. On the Pi the app runs under systemd with no
+    # browser and no tty, so that turns a stale/missing .cache into a request
+    # handler hanging (or dying on EOF) rather than failing usefully. Refuse
+    # to prompt at all; callers get SpotifyAuthRequired and the app stays up.
+    def get_auth_response(self, open_browser=None):
+        raise SpotifyAuthRequired(self.get_authorize_url())
+
+
+def get_cache_path():
+    return os.getenv("SPOTIPY_CACHE_PATH") or str(DEFAULT_CACHE_PATH)
+
+
+def get_auth_manager():
+    # Reuse one auth manager instead of constructing a fresh SpotifyOAuth on
+    # every call — each instantiation re-reads the token cache file
+    # independently, and with the dev server's threaded polling that opens a
+    # window for overlapping requests to race on token refresh.
+    global _auth_manager
+    if _auth_manager is None:
+        _auth_manager = _HeadlessSpotifyOAuth(
+            client_id=os.getenv("SPOTIFY_CLIENT_ID"),
+            client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
+            redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
+            scope=SCOPE,
+            open_browser=False,
+            cache_handler=CacheFileHandler(cache_path=get_cache_path()),
+        )
+    return _auth_manager
+
+
+def get_cached_token(auth_manager=None):
+    """Return a valid token dict from the cache, or None — never prompts.
+
+    Refreshes on the spot if the cached access token has expired (that's a
+    plain HTTP call, no user interaction). A refresh that fails — revoked
+    token, rotated client credentials — counts as "no token".
+    """
+    auth_manager = auth_manager or get_auth_manager()
+    try:
+        return auth_manager.validate_token(auth_manager.cache_handler.get_cached_token())
+    except SpotifyOauthError as e:
+        log.warning(f"Cached Spotify token could not be refreshed: {e}")
+        return None
+
+
+def is_authorized():
+    return get_cached_token() is not None
 
 
 def get_spotify_client():
-    # Reuse one client/auth-manager instead of constructing a fresh
-    # SpotifyOAuth on every call — each instantiation re-reads the token
-    # cache file independently, and with the dev server's threaded polling
-    # that opens a window for overlapping requests to race on token refresh.
     global _spotify_client
+    auth_manager = get_auth_manager()
     if _spotify_client is None:
-        _spotify_client = spotipy.Spotify(
-            auth_manager=spotipy.SpotifyOAuth(
-                client_id=os.getenv("SPOTIFY_CLIENT_ID"),
-                client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-                redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
-                scope="user-read-playback-state user-modify-playback-state user-read-playback-position" +
-                " user-read-currently-playing user-read-recently-played",
-                cache_handler=CacheFileHandler(),
-            )
-        )
+        _spotify_client = spotipy.Spotify(auth_manager=auth_manager)
+    # Check the cache up front so a missing/unusable token surfaces as
+    # SpotifyAuthRequired here, rather than deep inside spotipy's request path.
+    if get_cached_token(auth_manager) is None:
+        raise SpotifyAuthRequired(auth_manager.get_authorize_url())
     return _spotify_client
+
+
+def _sync_volume_from_device(playback):
+    # Keeps volume_control's tracked volume in step with the actual device
+    # (e.g. changed from a phone or the Spotify web player) every time we
+    # poll for the current track. current_playback (unlike currently_playing)
+    # includes the device's volume_percent for exactly this reason.
+    if not playback:
+        return
+    volume_percent = (playback.get("device") or {}).get("volume_percent")
+    if volume_percent is not None:
+        volume_control.set_current_volume(volume_percent)
 
 
 def get_current_track():
     sp = get_spotify_client()
     try:
-        current_track = sp.currently_playing(additional_types="episode")
+        current_track = sp.current_playback(additional_types="episode")
+        _sync_volume_from_device(current_track)
         return current_track
     except spotipy.exceptions.SpotifyException as e:
-        print(f"Error fetching current track: {e}")
+        log.warning(f"Error fetching current track: {e}")
         return None
 
 
@@ -44,7 +136,7 @@ def get_last_track():
         last_track = sp.current_user_recently_played(limit=1)
         return last_track
     except spotipy.exceptions.SpotifyException as e:
-        print(f"Error fetching last track: {e}")
+        log.warning(f"Error fetching last track: {e}")
         return None
 
 
@@ -54,7 +146,7 @@ def get_next_track():
         next_track = sp.queue()
         return next_track
     except spotipy.exceptions.SpotifyException as e:
-        print(f"Error fetching next track: {e}")
+        log.warning(f"Error fetching next track: {e}")
         return None
 
 
@@ -67,7 +159,7 @@ def get_playing(trackType="current"):
     elif trackType == "next":
         track = get_next_track()
     else:
-        print(f"Invalid trackType: {trackType}")
+        log.warning(f"Invalid trackType: {trackType}")
         return None
 
     if track is None:
@@ -115,7 +207,7 @@ def pause_playback():
         sp.pause_playback()
         return get_playing()
     except spotipy.exceptions.SpotifyException as e:
-        print(f"Error pausing playback: {e}")
+        log.warning(f"Error pausing playback: {e}")
         return None
 
 
@@ -125,7 +217,7 @@ def resume_playback():
         sp.start_playback()
         return get_playing()
     except spotipy.exceptions.SpotifyException as e:
-        print(f"Error resuming playback: {e}")
+        log.warning(f"Error resuming playback: {e}")
         return None
 
 
@@ -151,7 +243,7 @@ def next_track():
         sp.next_track()
         return _get_now_playing_after_change(previous_name)
     except spotipy.exceptions.SpotifyException as e:
-        print(f"Error skipping to next track: {e}")
+        log.warning(f"Error skipping to next track: {e}")
         return None
 
 
@@ -162,5 +254,23 @@ def previous_track():
         sp.previous_track()
         return _get_now_playing_after_change(previous_name)
     except spotipy.exceptions.SpotifyException as e:
-        print(f"Error going back to previous track: {e}")
+        log.warning(f"Error going back to previous track: {e}")
         return None
+
+
+def set_device_volume(volume_percent):
+    # Called from volume.py's monitor thread, not a request — an exception
+    # escaping here kills that thread for good, so SpotifyAuthRequired has to
+    # be swallowed rather than propagated the way it is out of the routes.
+    try:
+        sp = get_spotify_client()
+        sp.volume(int(volume_percent))
+    except SpotifyAuthRequired as e:
+        log.warning(f"Cannot set device volume: {e}")
+    except spotipy.exceptions.SpotifyException as e:
+        log.warning(f"Error setting device volume: {e}")
+
+
+# Wire the wheel's volume knob to the actual device - volume_control.py
+# knows nothing about Spotify, it just calls this back on every unit change.
+volume_control.set_volume_change_listener(set_device_volume)

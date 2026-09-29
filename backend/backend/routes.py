@@ -1,12 +1,37 @@
-import os
-
-from flask import Blueprint, jsonify, render_template, send_from_directory
+from flask import Blueprint, jsonify, render_template, request
 from flask import current_app as app
-from backend.spotify_api import get_current_track, get_playing, pause_playback, resume_playback, next_track, previous_track
+from backend.spotify_api import (
+    SpotifyAuthRequired,
+    get_current_track,
+    get_playing,
+    is_authorized,
+    next_track,
+    pause_playback,
+    previous_track,
+    resume_playback,
+)
+from backend.physical_control.encoder import get_position, get_velocity, get_acceleration
+from backend.physical_control import motor_control, volume as volume_control
+from backend import power_state
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
-PUBLIC_DIR = os.path.join(os.path.dirname(__file__), "public")
+
+# The OAuth flow needs a browser and a human, of whcich we initially have neither,
+# so spotify_api refuses to start it from inside a request
+# and raises instead. Turn 503 the frontend can read (and a log
+# line pointing at the fix) rather than a 500 or a hung handler.
+@bp.errorhandler(SpotifyAuthRequired)
+def handle_spotify_auth_required(error):
+    app.logger.warning(
+        "Spotify authorization required — no usable token cache. Run "
+        "`.venv/bin/python -m backend.authorize` from backend/ to (re)authorize."
+    )
+    return jsonify({
+        "error": "spotify_auth_required",
+        "message": str(error),
+        "auth_url": error.authorize_url,
+    }), 503
 
 
 @bp.route("/")
@@ -14,17 +39,6 @@ def index():
     app.logger.warning("sample message")
     return render_template("index.html")
 
-
-# Current Plan for serving album covers:
-# Serve __THREE__ albums covers at once, The past, current, and next song covers.
-# This should allow the user to see the current song, as well as swipe up and see
-# past and future. Also will make transitions seemless. The frontend will hit this
-# endpoint on ever
-
-
-@bp.route("/cover/<path:filename>")
-def cover_file(filename):
-    return send_from_directory(PUBLIC_DIR, filename)
 
 
 @bp.route("/current_track")
@@ -39,6 +53,34 @@ def now_playing():
     now_playing = get_playing()
     next = get_playing("next")
     return jsonify({"prev": prev, "now_playing": now_playing, "next": next})
+
+
+@bp.route("/status")
+def status():
+    return jsonify({"awake": power_state.is_awake()})
+
+
+@bp.route("/auth_status")
+def auth_status():
+    # Cheap, never-prompting check — reads (and refreshes) the token cache
+    # only. Lets the kiosk tell "Spotify isn't authorized" apart from
+    # "nothing is playing", both of which otherwise look like empty data.
+    return jsonify({"authorized": is_authorized()})
+
+
+@bp.route("/volume")
+def volume():
+    return jsonify({"volume": volume_control.get_current_volume()})
+
+
+@bp.route("/wake", methods=["POST"])
+def wake():
+    return jsonify({"awake": power_state.wake()})
+
+
+@bp.route("/sleep", methods=["POST"])
+def sleep():
+    return jsonify({"awake": power_state.sleep()})
 
 
 def _action_response(now_playing):
@@ -65,3 +107,47 @@ def next_track_route():
 @bp.route("/previous_track", methods=["POST"])
 def previous_track_route():
     return _action_response(previous_track())
+
+
+@bp.route("/wheel_position")
+def wheel_position():
+    return jsonify({"position": get_position()})
+
+
+@bp.route("/wheel_velocity")
+def wheel_velocity():
+    return jsonify({"velocity": get_velocity()})
+
+
+@bp.route("/wheel_acceleration")
+def wheel_acceleration():
+    return jsonify({"acceleration": get_acceleration()})
+
+
+@bp.route("/wheel_spin", methods=["POST"])
+def wheel_spin():
+    data = request.get_json(silent=True) or {}
+    motor_control.spin(data.get("speed_percent"), data.get("direction", motor_control.DIRECTION_CW))
+    return jsonify({"success": True})
+
+
+@bp.route("/wheel_stop", methods=["POST"])
+def wheel_stop():
+    motor_control.stop()
+    return jsonify({"success": True})
+
+
+@bp.route("/wheel_stop_immediately", methods=["POST"])
+def wheel_stop_immediately():
+    motor_control.stop_immediately()
+    return jsonify({"success": True})
+
+
+@bp.route("/wheel_step", methods=["POST"])
+def wheel_step():
+    data = request.get_json(silent=True) or {}
+    direction = data.get("direction")
+    if direction not in (motor_control.DIRECTION_CW, motor_control.DIRECTION_CCW):
+        return jsonify({"success": False, "error": "direction must be 1 (CW) or -1 (CCW)"}), 400
+    motor_control.step(direction)
+    return jsonify({"success": True})

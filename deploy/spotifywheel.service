@@ -1,0 +1,26 @@
+[Unit]
+Description=spotifyWheel backend (Flask + Spotify API)
+# Spotipy needs working DNS/routing at start, not just a configured link.
+After=network-online.target
+Wants=network-online.target
+# Only needed for the motor; the backend runs fine without it (motor_control
+# fails soft), so Wants= rather than Requires=.
+Wants=pigpiod.service
+
+[Service]
+Type=simple
+User=pi
+# Must be the backend/ dir: Spotipy's CacheFileHandler resolves .cache
+# relative to the working directory, and python-dotenv finds .env the same
+# way. Start anywhere else and OAuth silently re-runs the auth flow.
+WorkingDirectory=/home/pi/spotifyWheel/backend
+# backend/defaults.py sets DEBUG = True for local dev; override it here so the
+# kiosk doesn't serve tracebacks. from_prefixed_env() JSON-parses this, so 0
+# lands as a falsy int.
+Environment=FLASK_DEBUG=0
+ExecStart=/home/pi/spotifyWheel/backend/.venv/bin/flask --app backend run --host 127.0.0.1 --port 5001
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

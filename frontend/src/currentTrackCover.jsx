@@ -2,7 +2,7 @@ import { useSpin } from './SpinContext'
 import { useNowPlaying } from './NowPlayingContext'
 import WarpedCover from './WarpedCover'
 
-export default function CurrentTrackCover({ progressMs }) {
+export default function CurrentTrackCover() {
   const { nowPlaying } = useNowPlaying()
   const { spinSeconds } = useSpin()
 

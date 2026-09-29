@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import CurrentTrackCover from './currentTrackCover'
 import CurrentTrackInfo from './currentTrackInfo'
+import VolumeArc from './VolumeArc'
 import { useNowPlaying } from './NowPlayingContext'
 import { useSwipeGesture } from './useSwipeGesture'
 import { playNext, playPrevious, pausePlayback, resumePlayback } from './playbackActions'
@@ -8,7 +9,7 @@ import { useSimulatedProgress } from './formatTime'
 import './App.css'
 
 export default function App() {
-  const { nowPlaying, applyNowPlaying, applyPreloadedTrack, reconcileNowPlaying } = useNowPlaying()
+  const { nowPlaying, awake, wake, applyNowPlaying, applyPreloadedTrack, reconcileNowPlaying } = useNowPlaying()
 
   // nowPlaying.is_playing only updates after a network round-trip, so a
   // second tap arriving before that lands would still see the pre-tap
@@ -51,6 +52,21 @@ export default function App() {
     onTogglePlay: handleTogglePlay,
   })
 
+  // Asleep: render nothing but black, and take a tap to wake. Panel power is
+  // handled separately by the backend (power_state.py), but that's best-effort
+  // and can silently no-op under full KMS — blanking here is what guarantees
+  // /api/sleep actually darkens the screen. A tap anywhere wakes, rather than
+  // toggling playback as it would while awake.
+  if (!awake) {
+    return (
+      <div
+        className="stage is-asleep"
+        onPointerDown={wake}
+        onTouchStart={wake}
+      />
+    )
+  }
+
   return (
     <div className="stage" {...handlers}>
       <div
@@ -60,6 +76,7 @@ export default function App() {
         <CurrentTrackCover />
       </div>
       <CurrentTrackInfo progressMs={displayProgressMs} phase={phase} dragX={dragX} />
+      <VolumeArc />
     </div>
   )
 }

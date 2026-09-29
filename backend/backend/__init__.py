@@ -3,7 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask
 
-from backend import routes
+from backend import power_state, routes
 from backend.logging import init_logging
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
@@ -19,6 +19,11 @@ def create_app(config_overrides=None):
 
     if config_overrides is not None:
         app.config.from_mapping(config_overrides)
+
+    # Start awake by default — plugging the Pi in (backend boots via
+    # kiosk.service) should turn the display on, not leave it waiting for a
+    # wake trigger it hasn't received yet.
+    power_state.wake()
 
     app.register_blueprint(routes.bp)
 

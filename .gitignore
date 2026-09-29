@@ -1,3 +1,8 @@
 # AI stuff
-*.claude
+# A pattern containing a slash (other than a trailing one) is matched as a
+# path relative to this file's directory — so "./CLAUDE.md" made git look for
+# a directory literally named "." and never matched anything. Bare names
+# match at any depth; a leading slash anchors to the repo root.
+CLAUDE.md
 /agents.md
+.claude/

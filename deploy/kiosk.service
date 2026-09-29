@@ -1,0 +1,27 @@
+[Unit]
+Description=spotifyWheel kiosk (Cog on DRM)
+Requires=spotifywheel.service
+After=spotifywheel.service
+
+[Service]
+Type=simple
+User=pi
+# Cog's DRM backend needs to own a VT to take DRM master. This is also why
+# the Pi must boot to console (multi-user.target) with lightdm disabled —
+# a running desktop compositor holds DRM master and Cog fails with
+# "failed to schedule a page flip: Permission denied".
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+# Wait for the backend to actually answer rather than sleeping a fixed few
+# seconds — Cog exits straight away if its first page load fails, and on a
+# cold boot Flask can easily take longer than a blind sleep allows.
+ExecStartPre=/bin/sh -c 'until curl -sf http://127.0.0.1:5001/api/status >/dev/null; do sleep 1; done'
+ExecStart=/usr/bin/cog --platform=drm http://127.0.0.1:5001/
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

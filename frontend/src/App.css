@@ -22,6 +22,12 @@
   overflow: hidden;
 }
 
+/* Asleep — pure black, nothing drawn. Sits on the round .stage so a tap
+   anywhere on the physical panel lands on it and wakes. */
+.stage.is-asleep {
+  background: #000;
+}
+
 .gesture-surface {
   display: flex;
   flex-direction: column;
@@ -225,4 +231,37 @@
   opacity: 0.8;
   font-family: sans-serif;
   font-variant-numeric: tabular-nums;
+}
+
+/* Volume gauge across the top of the panel. Only up while the wheel is
+   actually moving the volume; geometry lives in VolumeArc.jsx. */
+.volume-arc {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 380ms ease, transform 380ms ease;
+}
+
+.volume-arc.is-visible {
+  opacity: 1;
+  transform: none;
+  transition-duration: 170ms;
+}
+
+.volume-arc-track {
+  fill: none;
+  stroke: #333;
+  stroke-width: 20;
+  stroke-linecap: round;
+}
+
+.volume-arc-fill {
+  fill: none;
+  stroke: #ffffffbc;
+  stroke-width: 20;
+  stroke-linecap: round;
+  transition: stroke-dasharray 110ms linear;
 }
