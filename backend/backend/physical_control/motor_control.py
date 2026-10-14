@@ -5,13 +5,13 @@ import time
 
 logger = logging.getLogger(__name__)
 
-# TB6612 driver, channel B (channel A is dead - see motor-project-notes.md).
-# BCM numbering. These match the wiring documented and bench-validated in
-# motor/motor_test.py - keep the two in step.
-GPIO_STBY = int(os.getenv("MOTOR_GPIO_STBY", 16))
-GPIO_PWMB = int(os.getenv("MOTOR_GPIO_PWMB", 18))  # hardware PWM channel
-GPIO_BIN1 = int(os.getenv("MOTOR_GPIO_BIN1", 20))
-GPIO_BIN2 = int(os.getenv("MOTOR_GPIO_BIN2", 21))
+# TB6612 driver, channel A (motor on AO1/AO2). BCM numbering. These match the
+# wiring documented and bench-validated in motor/motor_test.py - keep the two
+# in step.
+GPIO_STBY = int(os.getenv("MOTOR_GPIO_STBY", 4))
+GPIO_PWMA = int(os.getenv("MOTOR_GPIO_PWMA", 18))  # hardware PWM channel
+GPIO_AIN1 = int(os.getenv("MOTOR_GPIO_AIN1", 17))
+GPIO_AIN2 = int(os.getenv("MOTOR_GPIO_AIN2", 27))
 
 DIRECTION_CW = 1
 DIRECTION_CCW = -1
@@ -84,12 +84,12 @@ def _init_hardware():
                 return
 
             pi.set_mode(GPIO_STBY, pigpio.OUTPUT)
-            pi.set_mode(GPIO_BIN1, pigpio.OUTPUT)
-            pi.set_mode(GPIO_BIN2, pigpio.OUTPUT)
+            pi.set_mode(GPIO_AIN1, pigpio.OUTPUT)
+            pi.set_mode(GPIO_AIN2, pigpio.OUTPUT)
             pi.write(GPIO_STBY, 1)  # take the driver out of standby
-            pi.write(GPIO_BIN1, 0)
-            pi.write(GPIO_BIN2, 0)
-            pi.hardware_PWM(GPIO_PWMB, PWM_FREQUENCY_HZ, 0)
+            pi.write(GPIO_AIN1, 0)
+            pi.write(GPIO_AIN2, 0)
+            pi.hardware_PWM(GPIO_PWMA, PWM_FREQUENCY_HZ, 0)
         except Exception as e:
             logger.warning(f"Motor GPIO init failed; motor control disabled: {e}")
             return
@@ -105,28 +105,28 @@ def _drive_locked(speed_percent, direction):
 
     if _hardware_available:
         if speed_percent == 0:
-            _pi.write(GPIO_BIN1, 0)
-            _pi.write(GPIO_BIN2, 0)
+            _pi.write(GPIO_AIN1, 0)
+            _pi.write(GPIO_AIN2, 0)
         elif direction == DIRECTION_CW:
-            _pi.write(GPIO_BIN1, 1)
-            _pi.write(GPIO_BIN2, 0)
+            _pi.write(GPIO_AIN1, 1)
+            _pi.write(GPIO_AIN2, 0)
         else:
-            _pi.write(GPIO_BIN1, 0)
-            _pi.write(GPIO_BIN2, 1)
+            _pi.write(GPIO_AIN1, 0)
+            _pi.write(GPIO_AIN2, 1)
         duty = int(speed_percent / 100.0 * 1_000_000)
-        _pi.hardware_PWM(GPIO_PWMB, PWM_FREQUENCY_HZ, duty)
+        _pi.hardware_PWM(GPIO_PWMA, PWM_FREQUENCY_HZ, duty)
 
     _current_speed_percent = speed_percent
     _current_direction = direction
 
 
 def _brake_locked():
-    """Short brake per the TB6612 truth table (BIN1=BIN2=H). Caller holds _lock."""
+    """Short brake per the TB6612 truth table (AIN1=AIN2=H). Caller holds _lock."""
     global _current_speed_percent
     if _hardware_available:
-        _pi.write(GPIO_BIN1, 1)
-        _pi.write(GPIO_BIN2, 1)
-        _pi.hardware_PWM(GPIO_PWMB, PWM_FREQUENCY_HZ, 0)
+        _pi.write(GPIO_AIN1, 1)
+        _pi.write(GPIO_AIN2, 1)
+        _pi.hardware_PWM(GPIO_PWMA, PWM_FREQUENCY_HZ, 0)
     _current_speed_percent = 0.0
 
 
@@ -192,7 +192,7 @@ def stop():
 
 
 def stop_immediately():
-    """Fast stop via TB6612 short brake (BIN1=BIN2=H) - quicker than stop(),
+    """Fast stop via TB6612 short brake (AIN1=AIN2=H) - quicker than stop(),
     but safer than just cutting PWM/STBY."""
     _init_hardware()
 

@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 
 # See hall_encoder_notes.md: sensor A -> GPIO23 (pin 16), sensor B -> GPIO24 (pin 18),
 # both wired open-collector-through-10k into the GPIO, internal pull-ups enabled here.
-GPIO_PIN_A = int(os.getenv("ENCODER_GPIO_A", 23))
-GPIO_PIN_B = int(os.getenv("ENCODER_GPIO_B", 24))
+GPIO_PIN_A = int(os.getenv("ENCODER_GPIO_A", 24))
+GPIO_PIN_B = int(os.getenv("ENCODER_GPIO_B", 23))
 
 # Magnet poles on the wheel ring. Quadrature gives 2 steps per pole.
 # TODO: calibrate against the real ring (count steps for one hand-turned
