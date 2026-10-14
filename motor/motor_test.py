@@ -4,12 +4,12 @@ Quick bench test for an N20 DC motor on a TB6612FNG, driven by a Pi Zero 2 W.
 
 Wiring assumed (BCM numbering) -- edit the constants below to match your board:
 
-    STBY -> GPIO16   
-    PWMB -> GPIO18   
-    BIN1 -> GPIO20   
-    BIN2 -> GPIO21   
+    STBY -> GPIO4    (header pin 7)
+    PWMA -> GPIO18   (header pin 12)
+    AIN1 -> GPIO17   (header pin 11)
+    AIN2 -> GPIO27   (header pin 13)
 
-Motor is on BO1/BO2 (channel B). Channel A is unused.
+Motor is on AO1/AO2 (channel A). Channel B is unused.
 
 Setup:
     sudo apt install python3-gpiozero python3-lgpio
@@ -25,10 +25,10 @@ import time
 from gpiozero import DigitalOutputDevice, PWMOutputDevice
 
 # ---------------------------------------------------------------- pin config
-STBY_PIN = 16
-PWMB_PIN = 18
-BIN1_PIN = 20
-BIN2_PIN = 21
+STBY_PIN = 4
+PWMA_PIN = 18
+AIN1_PIN = 17
+AIN2_PIN = 27
 
 PWM_FREQ = 1000   # Hz. 1 kHz is above the audible whine of 100 Hz and well
 # under the TB6612's 100 kHz ceiling.
@@ -96,7 +96,7 @@ def _clamp(v):
 
 
 def main():
-    motor = TB6612Channel(BIN1_PIN, BIN2_PIN, PWMB_PIN, STBY_PIN)
+    motor = TB6612Channel(AIN1_PIN, AIN2_PIN, PWMA_PIN, STBY_PIN)
 
     def shutdown(*_):
         print("\nstopping...")

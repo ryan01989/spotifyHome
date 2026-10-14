@@ -125,7 +125,7 @@ restarts either if it dies.
 To run it by hand instead (e.g. while debugging over SSH):
 
 ```sh
-sudo pigpiod                            # only needed for the motor
+sudo pigpiod                            # only needed for the motor (and encoder)
 cd backend && .venv/bin/flask --app backend run --port 5001
 cog --platform=drm http://127.0.0.1:5001/
 ```
@@ -133,14 +133,21 @@ cog --platform=drm http://127.0.0.1:5001/
 `make run` works too, but it enables Flask's debug mode and reloader — fine for
 poking at the Pi over SSH, not what you want for kiosk use.
 
-If a desktop session is running, kill it before launching Cog:
+If a desktop session is running, stop it before launching Cog. Stop lightdm,
+not labwc — lightdm supervises the session and respawns labwc the moment it
+dies, so `pkill labwc` just restarts the desktop:
 
 ```sh
-sudo pkill labwc                        # sudo systemctl stop lightdm if it respawns
+sudo systemctl stop lightdm             # until next boot
 ```
 
 Better: disable it permanently (`deploy/README.md` covers this), since the
-units above assume nothing else is holding DRM master.
+units above assume nothing else is holding DRM master:
+
+```sh
+sudo systemctl set-default multi-user.target
+sudo systemctl disable lightdm
+```
 
 ---
 
@@ -166,9 +173,10 @@ The `/api/wheel_*` endpoints still respond; they just don't move anything.
 | 403 from every request on port 5000 | macOS AirPlay Receiver owns that port. Use 5001. |
 | `/api/*` 404s in the browser at :5173 | Backend isn't running — Vite's proxy has nothing to forward to. |
 | UI is stale after a `git pull` on the Pi | `frontend/dist` wasn't rebuilt before the commit. |
-| Cog: `failed to schedule a page flip: Permission denied` | A desktop session (labwc) holds DRM master. Kill it, or boot to console. |
+| Cog: `failed to schedule a page flip: Permission denied` | A desktop session (labwc) holds DRM master. `sudo systemctl stop lightdm` (killing labwc alone just respawns it), or boot to console. |
 | Cog `--platform=wl` segfaults | Known unresolved issue with labwc on VideoCore IV. Use `--platform=drm` with the desktop stopped. |
 | Motor commands do nothing on the Pi | `pigpiod` isn't running. `sudo pigpiod`. |
+| `apt install pigpio`: no installation candidate | Trixie (Debian 13) dropped the package. Build it from source (github.com/joan2937/pigpio, `make && sudo make install`) — a stopgap until pigpio is replaced; see the TODO in `CLAUDE.md`. |
 | `/api/*` returns 503 `spotify_auth_required` | No usable token cache — run `.venv/bin/python -m backend.authorize` in `backend/`. Also check the service's `WorkingDirectory`, since a missing `.cache` looks identical. |
 
 ---

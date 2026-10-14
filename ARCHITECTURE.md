@@ -52,7 +52,7 @@ flowchart LR
   VCG -. "best-effort power" .-> PANEL
   FLASK -- "pigpio socket" --> PIGPIOD
   MON -- "pigpio socket" --> PIGPIOD
-  PIGPIOD -- "20 kHz HW PWM<br/>GPIO16/18/20/21" --> DRV
+  PIGPIOD -- "20 kHz HW PWM<br/>GPIO4/18/17/27" --> DRV
   HALL -- "gpiozero edge callbacks" --> FLASK
   NFC -- "POST /api/sleep, /api/wake" --> FLASK
   MAC -. "dev only" .-> FLASK
