@@ -1,4 +1,5 @@
 import builtins
+import re
 
 import pytest
 
@@ -29,9 +30,16 @@ def client(app):
     return app.test_client()
 
 
-def test_index(client):
+def test_index_serves_frontend_bundle(client):
+    # `/` is the kiosk's entry point: frontend/dist/index.html, plus the
+    # hashed JS bundle it references. If either 404s, Cog shows a blank page.
     response = client.get("/")
-    assert b"It works!" in response.data
+    assert response.status_code == 200
+    assert b'<div id="root">' in response.data
+
+    bundle = re.search(rb'<script[^>]+src="(/assets/[^"]+\.js)"', response.data)
+    assert bundle, "index.html doesn't reference a JS bundle"
+    assert client.get(bundle.group(1).decode()).status_code == 200
 
 
 def test_now_playing_without_token_returns_503(client, no_token):

@@ -48,7 +48,7 @@ cd ../backend && make run
 **Open http://localhost:5001** — the whole app, frontend and API on one origin.
 
 `create_app()` points Flask's `static_folder` at `frontend/dist` with
-`static_url_path=""`, so `/` serves the built `index.html` and `/assets/*`,
+`static_url_path=""`, so `/` serves the built `index.html` and `/assets/*`, 
 `/presets.json`, `/favicon.svg` are served straight out of the bundle.
 
 ### The build is committed
