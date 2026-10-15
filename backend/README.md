@@ -114,9 +114,11 @@ sleep works either way. Details and overrides:
 so importing them on a machine with no GPIO — the dev Mac — leaves their
 commands as no-ops instead of crashing the app. You'll see one of:
 
-- `pigpio not available; motor control disabled`
-- `pigpiod not running; motor control disabled (start it with 'sudo pigpiod')`
+- `Motor GPIO init failed; motor control disabled: ...`
 - `gpiozero not available; wheel encoder disabled`
+
+Both drive GPIO through gpiozero on lgpio (apt's `python3-lgpio`, visible
+because `make venv` builds with `--system-site-packages`). No daemon.
 
 The `/api/wheel_*` routes still respond; they just don't move anything.
 

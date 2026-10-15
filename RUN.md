@@ -125,7 +125,6 @@ restarts either if it dies.
 To run it by hand instead (e.g. while debugging over SSH):
 
 ```sh
-sudo pigpiod                            # only needed for the motor (and encoder)
 cd backend && .venv/bin/flask --app backend run --port 5001
 cog --platform=drm http://127.0.0.1:5001/
 ```
@@ -158,9 +157,13 @@ soft, so importing them on a machine with no GPIO — the Mac — leaves the mot
 and encoder commands as no-ops rather than crashing the app. You'll see one of
 these in the log and nothing else breaks:
 
-- `pigpio not available; motor control disabled`
-- `pigpiod not running; motor control disabled (start it with 'sudo pigpiod')`
+- `Motor GPIO init failed; motor control disabled: ...`
 - `gpiozero not available; wheel encoder disabled`
+
+On the Pi, look for `Motor control ready on LGPIOFactory` at the first motor
+command. `PiGPIOFactory` or `NativeFactory` there means the venv can't see apt's
+`python3-lgpio`. It has to be built with `--system-site-packages`, which
+`make venv` does.
 
 The `/api/wheel_*` endpoints still respond; they just don't move anything.
 
@@ -175,8 +178,7 @@ The `/api/wheel_*` endpoints still respond; they just don't move anything.
 | UI is stale after a `git pull` on the Pi | `frontend/dist` wasn't rebuilt before the commit. |
 | Cog: `failed to schedule a page flip: Permission denied` | A desktop session (labwc) holds DRM master. `sudo systemctl stop lightdm` (killing labwc alone just respawns it), or boot to console. |
 | Cog `--platform=wl` segfaults | Known unresolved issue with labwc on VideoCore IV. Use `--platform=drm` with the desktop stopped. |
-| Motor commands do nothing on the Pi | `pigpiod` isn't running. `sudo pigpiod`. |
-| `apt install pigpio`: no installation candidate | Trixie (Debian 13) dropped the package. Build it from source (github.com/joan2937/pigpio, `make && sudo make install`) — a stopgap until pigpio is replaced; see the TODO in `CLAUDE.md`. |
+| Motor commands do nothing on the Pi | Check the `Motor control ready on ...` log line. Not `LGPIOFactory` → `sudo apt install python3-lgpio` and rebuild the venv (`make clean && make venv`). `GPIO busy` → another process (a bench script, a second backend) holds the pins. |
 | `/api/*` returns 503 `spotify_auth_required` | No usable token cache — run `.venv/bin/python -m backend.authorize` in `backend/`. Also check the service's `WorkingDirectory`, since a missing `.cache` looks identical. |
 
 ---

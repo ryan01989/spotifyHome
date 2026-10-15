@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 # wiring documented and bench-validated in motor/motor_test.py - keep the two
 # in step.
 GPIO_STBY = int(os.getenv("MOTOR_GPIO_STBY", 4))
-GPIO_PWMA = int(os.getenv("MOTOR_GPIO_PWMA", 18))  # hardware PWM channel
+GPIO_PWMA = int(os.getenv("MOTOR_GPIO_PWMA", 18))
 GPIO_AIN1 = int(os.getenv("MOTOR_GPIO_AIN1", 17))
 GPIO_AIN2 = int(os.getenv("MOTOR_GPIO_AIN2", 27))
 
@@ -21,19 +21,22 @@ DIRECTION_CCW = -1
 # Env-tunable so the Pi can be adjusted without a code change.
 DEFAULT_SPIN_SPEED_PERCENT = float(os.getenv("MOTOR_SPIN_SPEED_PERCENT", 50))
 
-# True hardware PWM via pigpio.hardware_PWM(), not gpiozero/pigpio software
-# PWM - software PWM gets ragged above ~8kHz on a Zero 2 W and pigpio's
-# software table doesn't even offer 20kHz. 20kHz is above the audible range
-# (no motor whine) and is what tb6612_hw20k_test.py validated as clean.
-PWM_FREQUENCY_HZ = 20000
+# Driven exactly the way the bench-proven tb6612_gui_openloop.py does it:
+# gpiozero on lgpio (python3-lgpio from apt - the venv is built with
+# --system-site-packages to see it), lgpio software PWM at 1kHz. The earlier
+# design - pigpio's hardware_PWM() at 20kHz on the PWM peripheral - hasn't
+# driven the motor since the move to Trixie and channel A. 1kHz is audible;
+# lgpio offers up to ~8kHz if the whine matters, but only 1kHz is proven.
+PWM_FREQUENCY_HZ = int(os.getenv("MOTOR_PWM_FREQUENCY_HZ", 8000))
 
-# Hop-start: rotor position at rest can stall a slow start. Below
-# HOP_START_THRESHOLD_PERCENT, kick to HOP_START_SPEED_PERCENT (just enough
-# to overcome stall torque, not the old 100%-duty kick) for
-# HOP_START_DURATION_S before settling to the requested speed.
-HOP_START_THRESHOLD_PERCENT = 30
-HOP_START_SPEED_PERCENT = 35
-HOP_START_DURATION_S = 0.12
+# Kick-start, as in the bench test: a brushed motor's starting torque depends
+# on where the rotor happens to sit, so every start from rest below
+# KICK_THRESHOLD_PERCENT fires KICK_SPEED_PERCENT for KICK_DURATION_S before
+# settling to the commanded speed. Above the threshold the command is its
+# own kick.
+KICK_SPEED_PERCENT = 100
+KICK_DURATION_S = 0.12
+KICK_THRESHOLD_PERCENT = 85
 
 # stop(): ramp to 0 over this long rather than cutting power immediately.
 CONTROLLED_STOP_DURATION_S = 1.0
@@ -52,7 +55,7 @@ STEP_DURATION_S = float(os.getenv("MOTOR_STEP_DURATION_S", 0.04))
 
 _lock = threading.Lock()
 _init_lock = threading.Lock()
-_pi = None
+_stby = _in1 = _in2 = _pwm = None  # gpiozero devices, once initialized
 _hardware_available = False
 _hardware_attempted = False
 
@@ -63,9 +66,9 @@ _generation = 0  # bumped on every new command; lets stale ramp/pulse threads ba
 
 def _init_hardware():
     # Lazy so importing this module (e.g. via routes.py) never crashes on a
-    # machine with no GPIO/pigpiod, such as the Mac used for local dev - it
-    # just leaves the motor commands as no-ops.
-    global _pi, _hardware_available, _hardware_attempted
+    # machine with no GPIO, such as the Mac used for local dev - it just
+    # leaves the motor commands as no-ops.
+    global _stby, _in1, _in2, _pwm, _hardware_available, _hardware_attempted
     if _hardware_attempted:
         return
 
@@ -75,33 +78,31 @@ def _init_hardware():
         _hardware_attempted = True
 
         try:
-            import pigpio
+            from gpiozero import DigitalOutputDevice, PWMOutputDevice
         except ImportError:
-            logger.warning("pigpio not available; motor control disabled")
+            logger.warning("gpiozero not available; motor control disabled")
             return
 
         try:
-            pi = pigpio.pi()
-            if not pi.connected:
-                logger.warning(
-                    "pigpiod not running; motor control disabled (start it with 'sudo pigpiod')"
-                )
-                return
-
-            pi.set_mode(GPIO_STBY, pigpio.OUTPUT)
-            pi.set_mode(GPIO_AIN1, pigpio.OUTPUT)
-            pi.set_mode(GPIO_AIN2, pigpio.OUTPUT)
-            pi.write(GPIO_STBY, 1)  # take the driver out of standby
-            pi.write(GPIO_AIN1, 0)
-            pi.write(GPIO_AIN2, 0)
-            pi.hardware_PWM(GPIO_PWMA, PWM_FREQUENCY_HZ, 0)
+            in1 = DigitalOutputDevice(GPIO_AIN1, initial_value=False)
+            in2 = DigitalOutputDevice(GPIO_AIN2, initial_value=False)
+            pwm = PWMOutputDevice(
+                GPIO_PWMA, frequency=PWM_FREQUENCY_HZ, initial_value=0)
+            stby = DigitalOutputDevice(GPIO_STBY, initial_value=False)
+            stby.on()  # take the driver out of standby
         except Exception as e:
             logger.warning(
                 f"Motor GPIO init failed; motor control disabled: {e}")
             return
 
-        _pi = pi
+        _stby, _in1, _in2, _pwm = stby, in1, in2, pwm
         _hardware_available = True
+        # The pin factory is the thing to check if the motor goes quiet again:
+        # LGPIOFactory is the proven path; PiGPIOFactory means lgpio wasn't
+        # importable and gpiozero fell back.
+        logger.info(
+            f"Motor control ready on {type(pwm.pin_factory).__name__}, PWM {PWM_FREQUENCY_HZ}Hz"
+        )
 
 
 def _drive_locked(speed_percent, direction):
@@ -111,16 +112,13 @@ def _drive_locked(speed_percent, direction):
 
     if _hardware_available:
         if speed_percent == 0:
-            _pi.write(GPIO_AIN1, 0)
-            _pi.write(GPIO_AIN2, 0)
-        elif direction == DIRECTION_CW:
-            _pi.write(GPIO_AIN1, 1)
-            _pi.write(GPIO_AIN2, 0)
+            _in1.off()
+            _in2.off()
+            _pwm.value = 0
         else:
-            _pi.write(GPIO_AIN1, 0)
-            _pi.write(GPIO_AIN2, 1)
-        duty = int(speed_percent / 100.0 * 1_000_000)
-        _pi.hardware_PWM(GPIO_PWMA, PWM_FREQUENCY_HZ, duty)
+            _in1.value = direction == DIRECTION_CW
+            _in2.value = direction != DIRECTION_CW
+            _pwm.value = speed_percent / 100.0
 
     _current_speed_percent = speed_percent
     _current_direction = direction
@@ -130,36 +128,35 @@ def _brake_locked():
     """Short brake per the TB6612 truth table (AIN1=AIN2=H). Caller holds _lock."""
     global _current_speed_percent
     if _hardware_available:
-        _pi.write(GPIO_AIN1, 1)
-        _pi.write(GPIO_AIN2, 1)
-        _pi.hardware_PWM(GPIO_PWMA, PWM_FREQUENCY_HZ, 0)
+        _in1.on()
+        _in2.on()
+        _pwm.value = 1.0
     _current_speed_percent = 0.0
 
 
 def spin(speed_percent=None, direction=DIRECTION_CW):
     """Drive the motor continuously at speed_percent (0-100) in direction.
 
-    Speeds under HOP_START_THRESHOLD_PERCENT get a brief kick to
-    HOP_START_SPEED_PERCENT first, then settle to the requested speed, since
-    rotor position at rest can otherwise stall a slow start.
+    Starting from rest below KICK_THRESHOLD_PERCENT, kicks at
+    KICK_SPEED_PERCENT first and then settles to the requested speed, so the
+    start doesn't depend on where the rotor happened to stop.
     """
     _init_hardware()
     if speed_percent is None:
         speed_percent = DEFAULT_SPIN_SPEED_PERCENT
     speed_percent = max(0.0, min(100.0, speed_percent))
 
-    needs_hop = 0 < speed_percent < HOP_START_THRESHOLD_PERCENT
-
     global _generation
     with _lock:
+        needs_kick = 0 < speed_percent < KICK_THRESHOLD_PERCENT and _current_speed_percent == 0
         _generation += 1
         my_generation = _generation
         _drive_locked(
-            HOP_START_SPEED_PERCENT if needs_hop else speed_percent, direction)
+            KICK_SPEED_PERCENT if needs_kick else speed_percent, direction)
 
-    if needs_hop:
+    if needs_kick:
         def _settle():
-            time.sleep(HOP_START_DURATION_S)
+            time.sleep(KICK_DURATION_S)
             with _lock:
                 if my_generation != _generation:
                     return  # superseded by a newer command

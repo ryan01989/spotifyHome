@@ -12,8 +12,8 @@ Motor and wheel tests, in two parts:
 
        cd backend && .venv/bin/python ../motor/motor_test.py
 
-   Uses gpiozero; in the venv that drives the pins through pigpiod (no lgpio
-   there), so `sudo pigpiod` first and stop the backend so they don't fight.
+   Uses gpiozero on lgpio, like the backend. Stop the backend first: lgpio
+   claims the pins per process, so the second one gets "GPIO busy".
 
    With --sweep it instead drives the backend's own motor_control (20kHz
    hardware PWM) through a range of speeds and prints the wheel's measured
@@ -45,7 +45,7 @@ from backend.physical_control import calibration, encoder, motor_control, volume
 
 @pytest.fixture
 def motor_calls(monkeypatch):
-    """Record motor commands instead of driving pigpio."""
+    """Record motor commands instead of driving GPIO."""
     calls = []
     for name in ("spin", "stop", "stop_immediately", "step"):
         monkeypatch.setattr(motor_control, name, lambda *a, _n=name, **kw: calls.append(_n))
@@ -377,7 +377,7 @@ def sweep():
     prove the backend's spin() can start the wheel."""
     motor_control._init_hardware()
     if not motor_control._hardware_available or not encoder.is_available():
-        print("needs pigpiod running and the encoder connected")
+        print("needs the motor driver and encoder GPIO (see the log for why it failed)")
         return
 
     try:

@@ -3,9 +3,6 @@ Description=spotifyWheel backend (Flask + Spotify API)
 # Spotipy needs working DNS/routing at start, not just a configured link.
 After=network-online.target
 Wants=network-online.target
-# Only needed for the motor; the backend runs fine without it (motor_control
-# fails soft), so Wants= rather than Requires=.
-Wants=pigpiod.service
 
 [Service]
 Type=simple
