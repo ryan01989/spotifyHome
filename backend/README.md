@@ -48,6 +48,17 @@ lags the acknowledged skip and would otherwise report the track you just left.
 **Wheel** — `GET /volume`, `/wheel_position`, `/wheel_velocity`,
 `/wheel_acceleration`; `POST /wheel_spin` `{speed_percent, direction}`,
 `/wheel_stop`, `/wheel_stop_immediately`, `/wheel_step` `{direction}`.
+The motor also follows playback on its own: every Spotify playback read calls
+`volume.set_playing()`, which spins it while music plays and stops it on pause.
+
+**Calibration** — `GET /calibration` → `{available, calibrated, steps_per_rev,
+expected_steps_per_rev, prompt, in_progress, steps}`; `POST /calibration/start`,
+`/calibration/finish` `{force}`, `/calibration/skip`. Every startup raises a
+prompt and keeps the motor off until it's finished, skipped, or times out
+(`WHEEL_CALIBRATION_PROMPT_TIMEOUT_SEC`, default 60). The user turns the wheel
+one revolution; within ±1 step of the expected 32 saves 32, further off returns
+409 `mismatch` unless `force`. Saved to `backend/.wheel_calibration.json`
+(override with `WHEEL_CALIBRATION_PATH`).
 
 ## Spotify auth
 

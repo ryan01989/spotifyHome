@@ -16,7 +16,7 @@ GPIO_AIN2 = int(os.getenv("MOTOR_GPIO_AIN2", 27))
 DIRECTION_CW = 1
 DIRECTION_CCW = -1
 
-DEFAULT_SPIN_SPEED_PERCENT = 50
+DEFAULT_SPIN_SPEED_PERCENT = 25
 
 # True hardware PWM via pigpio.hardware_PWM(), not gpiozero/pigpio software
 # PWM - software PWM gets ragged above ~8kHz on a Zero 2 W and pigpio's
@@ -91,7 +91,8 @@ def _init_hardware():
             pi.write(GPIO_AIN2, 0)
             pi.hardware_PWM(GPIO_PWMA, PWM_FREQUENCY_HZ, 0)
         except Exception as e:
-            logger.warning(f"Motor GPIO init failed; motor control disabled: {e}")
+            logger.warning(
+                f"Motor GPIO init failed; motor control disabled: {e}")
             return
 
         _pi = pi
@@ -148,7 +149,8 @@ def spin(speed_percent=None, direction=DIRECTION_CW):
     with _lock:
         _generation += 1
         my_generation = _generation
-        _drive_locked(HOP_START_SPEED_PERCENT if needs_hop else speed_percent, direction)
+        _drive_locked(
+            HOP_START_SPEED_PERCENT if needs_hop else speed_percent, direction)
 
     if needs_hop:
         def _settle():

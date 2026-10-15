@@ -265,3 +265,66 @@
   stroke-linecap: round;
   transition: stroke-dasharray 110ms linear;
 }
+/* Startup wheel calibration (CalibrationScreen.jsx). Kept inside the inner
+   ~70% of the round panel, where text isn't clipped by the circle. */
+.stage.calibration {
+  gap: 1.25rem;
+  padding: 0 130px;
+  box-sizing: border-box;
+  text-align: center;
+  color: #ddd;
+  font-family: sans-serif;
+}
+
+.calibration h1 {
+  margin: 0;
+  font-size: 2.25rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.calibration p {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.4;
+  opacity: 0.85;
+}
+
+.calibration-count {
+  font-size: 6rem;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.calibration-count span {
+  font-size: 2rem;
+  opacity: 0.5;
+}
+
+.calibration-error {
+  color: #ff8a80;
+}
+
+.calibration-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+/* Finger-sized: the panel is 4" across, so these are ~0.4" tall. */
+.calibration-actions button {
+  min-width: 150px;
+  padding: 18px 28px;
+  border: none;
+  border-radius: 999px;
+  background: #ffffffe0;
+  color: #111;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.calibration-actions button.secondary {
+  background: #333;
+  color: #ddd;
+}

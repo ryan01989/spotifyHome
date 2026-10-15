@@ -99,6 +99,8 @@ classDiagram
     +POST /wheel_stop
     +POST /wheel_stop_immediately
     +POST /wheel_step
+    +GET /calibration
+    +POST /calibration/start|finish|skip
     -handle_spotify_auth_required() 503
   }
 
@@ -174,6 +176,8 @@ classDiagram
       +get_current_volume() int
       +set_current_volume(v)
       +get_knob_position_degrees() float
+      +set_playing(is_playing) spins/stops motor
+      +suspend() / resume()
       -_init() starts monitor thread
       -_monitor_loop()
       -_apply_delta_locked(delta_degrees)
@@ -182,7 +186,9 @@ classDiagram
       <<module>>
       +GPIO_PIN_A = 23
       +GPIO_PIN_B = 24
-      +NUM_POLES = 24
+      +NUM_POLES = 16 (32 steps/rev)
+      +set_steps_per_rev(n)
+      +get_steps() int
       +DEGREES_PER_STEP: float
       -_position_steps: int
       -_on_edge() gpiozero callback

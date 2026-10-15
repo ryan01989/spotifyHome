@@ -11,7 +11,7 @@ from backend.spotify_api import (
     resume_playback,
 )
 from backend.physical_control.encoder import get_position, get_velocity, get_acceleration
-from backend.physical_control import motor_control, volume as volume_control
+from backend.physical_control import calibration, motor_control, volume as volume_control
 from backend import power_state
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -71,6 +71,39 @@ def auth_status():
 @bp.route("/volume")
 def volume():
     return jsonify({"volume": volume_control.get_current_volume()})
+
+
+@bp.route("/calibration")
+def calibration_status():
+    return jsonify(calibration.status())
+
+
+@bp.route("/calibration/start", methods=["POST"])
+def calibration_start():
+    try:
+        calibration.start()
+    except calibration.CalibrationError as e:
+        return jsonify({"error": "unavailable", "message": str(e)}), 409
+    return jsonify(calibration.status())
+
+
+@bp.route("/calibration/finish", methods=["POST"])
+def calibration_finish():
+    data = request.get_json(silent=True) or {}
+    try:
+        calibration.finish(force=bool(data.get("force")))
+    except calibration.CalibrationMismatch as e:
+        # Still in progress - the screen offers "save anyway" or "try again".
+        return jsonify({"error": "mismatch", "message": str(e), "steps": e.steps}), 409
+    except calibration.CalibrationError as e:
+        return jsonify({"error": "invalid", "message": str(e)}), 409
+    return jsonify(calibration.status())
+
+
+@bp.route("/calibration/skip", methods=["POST"])
+def calibration_skip():
+    calibration.skip()
+    return jsonify(calibration.status())
 
 
 @bp.route("/wake", methods=["POST"])

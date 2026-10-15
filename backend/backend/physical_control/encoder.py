@@ -11,10 +11,12 @@ logger = logging.getLogger(__name__)
 GPIO_PIN_A = int(os.getenv("ENCODER_GPIO_A", 24))
 GPIO_PIN_B = int(os.getenv("ENCODER_GPIO_B", 23))
 
-# Magnet poles on the wheel ring. Quadrature gives 2 steps per pole.
-# TODO: calibrate against the real ring (count steps for one hand-turned
-# revolution) and set ENCODER_NUM_POLES rather than trusting this default.
-NUM_POLES = int(os.getenv("ENCODER_NUM_POLES", 24))
+# Magnet poles on the wheel ring: 16 magnets mounted N,S,N,S, so 16 poles.
+# Each N-S pair is one quadrature cycle, and counting every edge on both
+# sensors gives 4 steps per cycle = 2 steps per pole = 32 steps/rev.
+# calibration.py checks that against a measured hand-turned revolution and
+# hands the result to set_steps_per_rev().
+NUM_POLES = int(os.getenv("ENCODER_NUM_POLES", 16))
 STEPS_PER_REV = 2 * NUM_POLES
 DEGREES_PER_STEP = 360.0 / STEPS_PER_REV
 
@@ -131,6 +133,34 @@ def _on_edge():
         velocity = _velocity_locked(now)
         _velocity_history.append((now, velocity))
         _prune(_velocity_history, now, ACCEL_WINDOW_SEC)
+
+
+def is_available():
+    """Whether the encoder hardware came up - False on a machine with no GPIO."""
+    _init_hardware()
+    return _hardware_available
+
+
+def get_steps():
+    """Raw cumulative step count, independent of the degrees-per-step scale.
+    What calibration counts, since that scale is the thing being measured."""
+    _init_hardware()
+    with _state_lock:
+        return _position_steps
+
+
+def set_steps_per_rev(steps_per_rev):
+    """Rescale to a measured steps-per-revolution. get_position() jumps to the
+    new scale immediately, so anything tracking position across this call
+    (volume.py's monitor) has to re-seed its reference afterwards."""
+    global STEPS_PER_REV, DEGREES_PER_STEP
+    with _state_lock:
+        STEPS_PER_REV = steps_per_rev
+        DEGREES_PER_STEP = 360.0 / steps_per_rev
+        # Histories are in degrees at the old scale; mixing them with new
+        # samples would report a phantom velocity spike.
+        _position_history.clear()
+        _velocity_history.clear()
 
 
 def get_position():

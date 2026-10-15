@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import CurrentTrackCover from './currentTrackCover'
 import CurrentTrackInfo from './currentTrackInfo'
 import VolumeArc from './VolumeArc'
+import CalibrationScreen, { useCalibration } from './CalibrationScreen'
 import { useNowPlaying } from './NowPlayingContext'
 import { useSwipeGesture } from './useSwipeGesture'
 import { playNext, playPrevious, pausePlayback, resumePlayback } from './playbackActions'
@@ -10,6 +11,7 @@ import './App.css'
 
 export default function App() {
   const { nowPlaying, awake, wake, applyNowPlaying, applyPreloadedTrack, reconcileNowPlaying } = useNowPlaying()
+  const calibration = useCalibration()
 
   // nowPlaying.is_playing only updates after a network round-trip, so a
   // second tap arriving before that lands would still see the pre-tap
@@ -65,6 +67,12 @@ export default function App() {
         onTouchStart={wake}
       />
     )
+  }
+
+  // Startup calibration takes over the whole screen (and the wheel - the
+  // backend keeps the motor off) until it's done, skipped or times out.
+  if (calibration.active) {
+    return <CalibrationScreen {...calibration} />
   }
 
   return (

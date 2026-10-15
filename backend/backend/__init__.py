@@ -5,6 +5,7 @@ from flask import Flask
 
 from backend import power_state, routes
 from backend.logging import init_logging
+from backend.physical_control import calibration
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
@@ -24,6 +25,10 @@ def create_app(config_overrides=None):
     # kiosk.service) should turn the display on, not leave it waiting for a
     # wake trigger it hasn't received yet.
     power_state.wake()
+
+    # Applies the saved wheel calibration and raises the startup prompt; the
+    # motor stays off until the prompt is done, skipped or times out.
+    calibration.load()
 
     app.register_blueprint(routes.bp)
 

@@ -124,6 +124,9 @@ def get_current_track():
     try:
         current_track = sp.current_playback(additional_types="episode")
         _sync_volume_from_device(current_track)
+        # Spin the wheel while music plays. No playback at all (no active
+        # device) counts as paused.
+        volume_control.set_playing(bool(current_track and current_track.get("is_playing")))
         return current_track
     except spotipy.exceptions.SpotifyException as e:
         log.warning(f"Error fetching current track: {e}")
@@ -205,7 +208,11 @@ def pause_playback():
     sp = get_spotify_client()
     try:
         sp.pause_playback()
-        return get_playing()
+        # Spotify's state can lag the command, so the re-read may still say
+        # playing; set the motor from what we just did, after that re-read.
+        now_playing = get_playing()
+        volume_control.set_playing(False)
+        return now_playing
     except spotipy.exceptions.SpotifyException as e:
         log.warning(f"Error pausing playback: {e}")
         return None
@@ -215,7 +222,9 @@ def resume_playback():
     sp = get_spotify_client()
     try:
         sp.start_playback()
-        return get_playing()
+        now_playing = get_playing()  # see pause_playback()
+        volume_control.set_playing(True)
+        return now_playing
     except spotipy.exceptions.SpotifyException as e:
         log.warning(f"Error resuming playback: {e}")
         return None

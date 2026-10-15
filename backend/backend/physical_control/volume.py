@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 # "Relatively still": the position swing (degrees) allowed within
 # HALT_TIME_SEC for the wheel to count as halted. Defaults to one encoder
-# step of jitter tolerance.
-HALT_DEADZONE_DEGREES = float(os.getenv("VOLUME_HALT_DEADZONE_DEGREES", encoder.DEGREES_PER_STEP))
+# step of jitter tolerance - read live, since calibration rescales the step.
+_HALT_DEADZONE_OVERRIDE = os.getenv("VOLUME_HALT_DEADZONE_DEGREES")
 HALT_TIME_SEC = float(os.getenv("VOLUME_HALT_TIME_SEC", 0.5))
 
 VOLUME_MIN = 0
@@ -58,6 +58,20 @@ _rest_position = None
 _stillness_since = 0.0
 _was_halted = True
 
+# Whether the motor should be driving when the wheel is the motor's turn -
+# true while Spotify reports playback, via set_playing().
+_motor_wanted = False
+
+# While suspended (calibration.py has the wheel), nothing here reads the
+# encoder or touches the motor; set_playing() still records what's wanted.
+_suspended = False
+
+
+def _halt_deadzone_degrees():
+    if _HALT_DEADZONE_OVERRIDE is not None:
+        return float(_HALT_DEADZONE_OVERRIDE)
+    return encoder.DEGREES_PER_STEP
+
 
 def _apply_delta_locked(delta_degrees):
     """Advance volume by delta_degrees of wheel rotation, firing one haptic
@@ -87,18 +101,25 @@ def _monitor_loop():
     global _last_position, _last_movement_time, _was_halted, _armed
     global _rest_position, _stillness_since
     while True:
+        if _suspended:
+            time.sleep(MONITOR_POLL_INTERVAL_SEC)
+            continue
+
         position = encoder.get_position()
         now = time.monotonic()
         changed_volume = None
 
         with _lock:
+            if _suspended:
+                continue  # suspended since the check above
+
             # "Relatively still" means the wheel hasn't left a deadzone around
             # where it came to rest. Any excursion past that moves the
             # reference and restarts the clock, so HALT_TIME_SEC always
             # measures uninterrupted stillness.
             if _rest_position is None:
                 _rest_position = position
-            elif abs(position - _rest_position) > HALT_DEADZONE_DEGREES:
+            elif abs(position - _rest_position) > _halt_deadzone_degrees():
                 _rest_position = position
                 _stillness_since = now
             halted = now - _stillness_since >= HALT_TIME_SEC
@@ -120,7 +141,9 @@ def _monitor_loop():
                     # Disarming here is what makes the restart safe: the
                     # rotation the motor is about to produce is its own, and
                     # would otherwise read as the user spinning the volume up.
-                    motor_control.spin()
+                    # Paused, the wheel just goes back to sitting still.
+                    if _motor_wanted:
+                        motor_control.spin()
                     _armed = False
 
         # Fired outside the lock - it may end up making a network call
@@ -149,6 +172,56 @@ def _init():
             return
         _monitor_started = True
         threading.Thread(target=_monitor_loop, daemon=True).start()
+
+
+def set_playing(is_playing):
+    """Spin the wheel while music plays, stop it on pause. spotify_api.py
+    calls this on every playback read; only a change acts. While the user
+    holds the knob (armed) or calibration has the wheel, it's just recorded -
+    disarming/resume() pick it up when the wheel comes back to the motor."""
+    _init()
+    global _motor_wanted
+    with _lock:
+        if is_playing == _motor_wanted:
+            return
+        _motor_wanted = is_playing
+        if _armed or _suspended:
+            return
+        if is_playing:
+            motor_control.spin()
+        else:
+            motor_control.stop()
+
+
+def suspend():
+    """Hand the wheel to calibration: stop the motor, drop out of volume
+    mode, and stop reading the encoder until resume()."""
+    global _suspended, _armed
+    with _lock:
+        # stop() rather than stop_immediately(): it ends coasting, where the
+        # short brake would leave the wheel stiff to turn by hand. Only if the
+        # motor is actually running 
+        if _motor_wanted and not _armed and not _suspended:
+            motor_control.stop()
+        _suspended = True
+        _armed = False
+
+
+def resume():
+    """Take the wheel back from calibration, restarting the motor if music
+    is playing. Re-seeds the halt detector from scratch - calibration may
+    have rescaled get_position(), and the hand-turn that just happened
+    mustn't read as a halt that arms the knob."""
+    global _suspended, _rest_position, _last_position, _was_halted
+    with _lock:
+        if not _suspended:
+            return
+        _suspended = False
+        _rest_position = None
+        _last_position = None
+        _was_halted = True
+        if _motor_wanted:
+            motor_control.spin()
 
 
 def set_volume_change_listener(callback):
