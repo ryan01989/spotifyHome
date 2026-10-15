@@ -15,6 +15,10 @@ Motor and wheel tests, in two parts:
    Uses gpiozero; in the venv that drives the pins through pigpiod (no lgpio
    there), so `sudo pigpiod` first and stop the backend so they don't fight.
 
+   With --sweep it instead drives the backend's own motor_control (20kHz
+   hardware PWM) through a range of speeds and prints the wheel's measured
+   deg/s at each - how to pick MOTOR_SPIN_SPEED_PERCENT.
+
 Wiring (BCM numbering) - read from motor_control.py so the bench and the
 backend can't disagree:
 
@@ -57,6 +61,12 @@ def wheel(monkeypatch, motor_calls):
     monkeypatch.setattr(volume, "_armed", False)
     monkeypatch.setattr(volume, "_current_volume", 50.0)
     monkeypatch.setattr(volume, "_last_wheel_change_time", None)
+    monkeypatch.setattr(volume, "_spin_commanded_at", None)
+    monkeypatch.setattr(volume, "_stall_retry_at", None)
+    monkeypatch.setattr(volume, "_rest_position", None)
+    monkeypatch.setattr(volume, "_stillness_since", 0.0)
+    monkeypatch.setattr(volume, "_was_halted", True)
+    monkeypatch.setattr(volume, "_pending_push", None)
     monkeypatch.setattr(calibration, "_saved_steps_per_rev", None)
     monkeypatch.setattr(calibration, "_prompt_pending", False)
     monkeypatch.setattr(calibration, "_start_steps", None)
@@ -101,6 +111,38 @@ def test_suspend_holds_motor_until_resume(wheel, motor_calls):
     assert motor_calls == []
     volume.resume()
     assert motor_calls == ["spin"]
+
+
+def test_stalled_motor_stops_and_retries(wheel, motor_calls):
+    volume.set_playing(True)
+    t0 = volume._spin_commanded_at
+    volume._tick(0.0, t0)
+    volume._tick(0.0, t0 + volume.STALL_SEC)
+    assert motor_calls == ["spin", "stop"]
+    volume._tick(0.0, t0 + volume.STALL_SEC + volume.STALL_RETRY_SEC)
+    assert motor_calls == ["spin", "stop", "spin"]
+
+
+def test_turning_wheel_is_not_a_stall(wheel, motor_calls):
+    volume.set_playing(True)
+    t0 = volume._spin_commanded_at
+    for i in range(10):
+        volume._tick(i * 22.5, t0 + i * 0.4)  # two encoder steps per tick
+    assert motor_calls == ["spin"]
+
+
+def test_pause_mid_turn_does_not_rearm(wheel, motor_calls):
+    volume.set_playing(True)
+    t0 = volume._spin_commanded_at
+    volume._tick(0.0, t0)
+    volume._tick(22.5, t0 + 0.1)
+    volume._tick(22.5, t0 + 0.7)  # halted: the user grabbed it
+    assert motor_calls == ["spin", "stop"]
+
+    volume._tick(45.0, t0 + 0.8)  # turning the knob
+    volume._tick(45.0, t0 + 1.4)  # pausing mid-turn
+    assert motor_calls.count("stop") == 1
+    assert volume._pending_push == volume.get_current_volume()
 
 
 def test_device_volume_syncs_when_wheel_idle(wheel):
@@ -325,5 +367,31 @@ def main():
         motor.close()
 
 
+SWEEP_SPEEDS = (30, 40, 50, 60, 70, 80, 90, 100)
+
+
+def sweep():
+    """Find the slowest speed that actually turns the wheel, through the
+    backend's own path - motor_control's 20kHz hardware PWM, measured by the
+    encoder. main() drives gpiozero at 1kHz instead, so it passing doesn't
+    prove the backend's spin() can start the wheel."""
+    motor_control._init_hardware()
+    if not motor_control._hardware_available or not encoder.is_available():
+        print("needs pigpiod running and the encoder connected")
+        return
+
+    try:
+        for speed in SWEEP_SPEEDS:
+            motor_control.spin(speed)
+            time.sleep(0.5)  # past spin-up
+            start = encoder.get_position()
+            time.sleep(2)
+            print(f"  {speed:3d}%  {(encoder.get_position() - start) / 2:7.1f} deg/s")
+            motor_control.spin(0)  # coast, not brake - let it settle
+            time.sleep(1)
+    finally:
+        motor_control.spin(0)
+
+
 if __name__ == "__main__":
-    main()
+    sweep() if "--sweep" in sys.argv else main()

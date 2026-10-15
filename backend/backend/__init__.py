@@ -1,9 +1,15 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask
 
-from backend import power_state, routes
+# Before the imports below: motor_control, encoder and volume read their
+# tuning env vars (MOTOR_SPIN_SPEED_PERCENT, ...) at import time, so loading
+# .env only in create_app() left those settings silently ignored.
+load_dotenv()
+
+from flask import Flask  # noqa: E402
+
+from backend import power_state, routes  # noqa: E402
 from backend.logging import init_logging
 from backend.physical_control import calibration
 

@@ -16,7 +16,10 @@ GPIO_AIN2 = int(os.getenv("MOTOR_GPIO_AIN2", 27))
 DIRECTION_CW = 1
 DIRECTION_CCW = -1
 
-DEFAULT_SPIN_SPEED_PERCENT = 50
+# Under load the N20 stalls below some duty that has to be measured on the
+# real wheel (motor_test.py --sweep); volume.py logs a stall when it happens.
+# Env-tunable so the Pi can be adjusted without a code change.
+DEFAULT_SPIN_SPEED_PERCENT = float(os.getenv("MOTOR_SPIN_SPEED_PERCENT", 50))
 
 # True hardware PWM via pigpio.hardware_PWM(), not gpiozero/pigpio software
 # PWM - software PWM gets ragged above ~8kHz on a Zero 2 W and pigpio's
@@ -36,9 +39,11 @@ HOP_START_DURATION_S = 0.12
 CONTROLLED_STOP_DURATION_S = 1.0
 CONTROLLED_STOP_STEP_S = 0.02
 
-# step(): brief opposing pulse volume.py uses for a physical "click".
-STEP_SPEED_PERCENT = 40
-STEP_DURATION_S = 0.04
+# step(): brief opposing pulse volume.py uses for a physical "click". 40%
+# barely cleared the drivetrain's friction and felt like slop rather than a
+# detent - a click wants full force, kept short.
+STEP_SPEED_PERCENT = float(os.getenv("MOTOR_STEP_SPEED_PERCENT", 80))
+STEP_DURATION_S = float(os.getenv("MOTOR_STEP_DURATION_S", 0.04))
 
 # This module doesn't report whether the wheel is moving under its own power.
 # volume.py tells motor motion from user motion by when it's armed (between a

@@ -36,6 +36,15 @@ RESTART_IDLE_SEC = float(os.getenv("VOLUME_RESTART_IDLE_SEC", 2.0))
 # this long. 
 DEVICE_SYNC_HOLD_SEC = float(os.getenv("VOLUME_DEVICE_SYNC_HOLD_SEC", 6.0))
 
+# Stall: the motor has been told to spin but the wheel hasn't left the halt
+# deadzone in this long. Stop and retry.
+STALL_SEC = float(os.getenv("MOTOR_STALL_SEC", 1.5))
+STALL_RETRY_SEC = float(os.getenv("MOTOR_STALL_RETRY_SEC", 10.0))
+
+# Pushes to the volume listener go out on their own thread, coalesced to the
+# latest value, at most one per PUSH_INTERVAL_SEC. 
+PUSH_INTERVAL_SEC = float(os.getenv("VOLUME_PUSH_INTERVAL_SEC", 0.5))
+
 _lock = threading.Lock()
 _init_lock = threading.Lock()
 _monitor_started = False
@@ -45,8 +54,10 @@ _last_wheel_change_time = None  # monotonic; when the wheel last moved the volum
 
 # Invoked with the new int volume whenever a wheel spin pushes it across a
 # whole unit - lets spotify_api.py push that to the actual device without
-# this module knowing anything about Spotify.
+# this module knowing anything about Spotify. Called from _push_loop.
 _volume_change_listener = None
+_push_condition = threading.Condition()
+_pending_push = None
 
 # Volume tracking runs only between a halt arming it and RESTART_IDLE_SEC of
 # stillness disarming it again - see _monitor_loop. Outside that window the
@@ -71,11 +82,32 @@ _motor_wanted = False
 # encoder or touches the motor; set_playing() still records what's wanted.
 _suspended = False
 
+# When this module last told the motor to spin (None while it isn't meant to
+# be driving), and when to try again after a stall.
+_spin_commanded_at = None
+_stall_retry_at = None
+
 
 def _halt_deadzone_degrees():
     if _HALT_DEADZONE_OVERRIDE is not None:
         return float(_HALT_DEADZONE_OVERRIDE)
     return encoder.DEGREES_PER_STEP
+
+
+def _spin_locked(now):
+    """Start the motor and the stall watch. Caller holds _lock."""
+    global _spin_commanded_at, _stall_retry_at
+    motor_control.spin()
+    _spin_commanded_at = now
+    _stall_retry_at = None
+
+
+def _stop_locked():
+    """Stop the motor and drop any stall watch/retry. Caller holds _lock."""
+    global _spin_commanded_at, _stall_retry_at
+    motor_control.stop()
+    _spin_commanded_at = None
+    _stall_retry_at = None
 
 
 def _apply_delta_locked(delta_degrees):
@@ -103,75 +135,106 @@ def _apply_delta_locked(delta_degrees):
     return round(new_volume) if units_crossed else None
 
 
-def _monitor_loop():
+def _tick(position, now):
+    """One monitor poll: halt/arm/disarm, volume tracking, stall watch."""
     global _last_position, _last_movement_time, _was_halted, _armed
-    global _rest_position, _stillness_since
-    while True:
+    global _rest_position, _stillness_since, _spin_commanded_at, _stall_retry_at
+    changed_volume = None
+
+    with _lock:
         if _suspended:
-            time.sleep(MONITOR_POLL_INTERVAL_SEC)
-            continue
+            return  # suspended since the caller checked
 
-        position = encoder.get_position()
-        now = time.monotonic()
-        changed_volume = None
+        # "Relatively still" means the wheel hasn't left a deadzone around
+        # where it came to rest. Any excursion past that moves the
+        # reference and restarts the clock, so HALT_TIME_SEC always
+        # measures uninterrupted stillness.
+        if _rest_position is None:
+            _rest_position = position
+        elif abs(position - _rest_position) > _halt_deadzone_degrees():
+            _rest_position = position
+            _stillness_since = now
+        halted = now - _stillness_since >= HALT_TIME_SEC
 
-        with _lock:
-            if _suspended:
-                continue  # suspended since the check above
+        # Already armed, a halt is just the user pausing mid-turn - they still
+        # have the knob, and the motor is already off.
+        if halted and not _was_halted and not _armed:
+            logger.info("Wheel halted; volume knob armed, motor stopped")
+            _stop_locked()
+            _armed = True
+            _last_position = position  # start volume tracking fresh from the halt
+            _last_movement_time = now
+        _was_halted = halted
 
-            # "Relatively still" means the wheel hasn't left a deadzone around
-            # where it came to rest. Any excursion past that moves the
-            # reference and restarts the clock, so HALT_TIME_SEC always
-            # measures uninterrupted stillness.
-            if _rest_position is None:
-                _rest_position = position
-            elif abs(position - _rest_position) > _halt_deadzone_degrees():
-                _rest_position = position
-                _stillness_since = now
-            halted = now - _stillness_since >= HALT_TIME_SEC
-
-            if halted and not _was_halted:
-                logger.info("Wheel halted; volume knob armed, motor stopped")
-                motor_control.stop()
-                _armed = True
-                _last_position = position  # start volume tracking fresh from the halt
+        if _armed:
+            delta = position - _last_position
+            _last_position = position
+            if delta != 0:
                 _last_movement_time = now
-            _was_halted = halted
+                changed_volume = _apply_delta_locked(delta)
+            elif now - _last_movement_time >= RESTART_IDLE_SEC:
+                # Disarming here is what makes the restart safe: the
+                # rotation the motor is about to produce is its own, and
+                # would otherwise read as the user spinning the volume up.
+                # Paused, the wheel just goes back to sitting still.
+                logger.info(f"Volume knob idle; disarmed (motor {'spinning' if _motor_wanted else 'stays off'})")
+                if _motor_wanted:
+                    _spin_locked(now)
+                _armed = False
+        elif _spin_commanded_at is not None:
+            if now - max(_stillness_since, _spin_commanded_at) >= STALL_SEC:
+                logger.warning(
+                    f"Motor stalled: driving at {motor_control.DEFAULT_SPIN_SPEED_PERCENT:g}% "
+                    f"but the wheel hasn't moved in {STALL_SEC:g}s. Stopping; retrying in "
+                    f"{STALL_RETRY_SEC:g}s. Raise MOTOR_SPIN_SPEED_PERCENT - "
+                    "motor_test.py --sweep measures what it needs."
+                )
+                _stop_locked()
+                _stall_retry_at = now + STALL_RETRY_SEC
+        elif _stall_retry_at is not None and now >= _stall_retry_at:
+            _spin_locked(now)
 
-            if _armed:
-                delta = position - _last_position
-                _last_position = position
-                if delta != 0:
-                    _last_movement_time = now
-                    changed_volume = _apply_delta_locked(delta)
-                elif now - _last_movement_time >= RESTART_IDLE_SEC:
-                    # Disarming here is what makes the restart safe: the
-                    # rotation the motor is about to produce is its own, and
-                    # would otherwise read as the user spinning the volume up.
-                    # Paused, the wheel just goes back to sitting still.
-                    logger.info(f"Volume knob idle; disarmed (motor {'spinning' if _motor_wanted else 'stays off'})")
-                    if _motor_wanted:
-                        motor_control.spin()
-                    _armed = False
+    if changed_volume is not None:
+        _queue_push(changed_volume)
 
-        # Fired outside the lock - it may end up making a network call
-        # (spotify_api.py's listener) and must not block the poll loop.
-        if changed_volume is not None and _volume_change_listener is not None:
-            try:
-                _volume_change_listener(changed_volume)
-            except Exception:
-                # A listener blowing up - no Spotify token, network down -
-                # must not take the wheel with it. This thread is the only
-                # thing reading the encoder, and it doesn't get restarted.
-                logger.exception("Volume change listener failed")
 
+def _monitor_loop():
+    while True:
+        if not _suspended:
+            _tick(encoder.get_position(), time.monotonic())
         time.sleep(MONITOR_POLL_INTERVAL_SEC)
 
 
+def _queue_push(volume):
+    global _pending_push
+    with _push_condition:
+        _pending_push = volume
+        _push_condition.notify()
+
+
+def _push_loop():
+    global _pending_push
+    while True:
+        with _push_condition:
+            while _pending_push is None:
+                _push_condition.wait()
+            volume, _pending_push = _pending_push, None
+        if _volume_change_listener is not None:
+            try:
+                _volume_change_listener(volume)
+            except Exception:
+                # A listener blowing up - no Spotify token, network down -
+                # must not take volume pushes with it; this thread doesn't
+                # get restarted.
+                logger.exception("Volume change listener failed")
+        time.sleep(PUSH_INTERVAL_SEC)
+
+
 def _init():
-    """Start the background monitor thread on first use; lazy so importing
-    this module never blocks or spins up a thread until something actually
-    needs it (mirrors encoder.py / motor_control.py's lazy hardware init)."""
+    """Start the background monitor and push threads on first use; lazy so
+    importing this module never blocks or spins up a thread until something
+    actually needs it (mirrors encoder.py / motor_control.py's lazy hardware
+    init)."""
     global _monitor_started
     if _monitor_started:
         return
@@ -180,6 +243,7 @@ def _init():
             return
         _monitor_started = True
         threading.Thread(target=_monitor_loop, daemon=True).start()
+        threading.Thread(target=_push_loop, daemon=True).start()
 
 
 def set_playing(is_playing):
@@ -201,9 +265,9 @@ def set_playing(is_playing):
             return
         logger.info(f"Playback {'started' if is_playing else 'paused'}; motor {'spinning' if is_playing else 'stopping'}")
         if is_playing:
-            motor_control.spin()
+            _spin_locked(time.monotonic())
         else:
-            motor_control.stop()
+            _stop_locked()
 
 
 def suspend():
@@ -215,7 +279,7 @@ def suspend():
         # short brake would leave the wheel stiff to turn by hand. Only if the
         # motor is actually running 
         if _motor_wanted and not _armed and not _suspended:
-            motor_control.stop()
+            _stop_locked()
         _suspended = True
         _armed = False
 
@@ -235,12 +299,12 @@ def resume():
         _was_halted = True
         logger.info(f"Wheel back from calibration; motor {'spinning' if _motor_wanted else 'stays off (not playing)'}")
         if _motor_wanted:
-            motor_control.spin()
+            _spin_locked(time.monotonic())
 
 
 def set_volume_change_listener(callback):
-    """Register callback(volume:int), invoked (off the monitor thread's lock)
-    whenever a wheel spin pushes the tracked volume across a whole unit.
+    """Register callback(volume:int), invoked from the push thread (coalesced,
+    at most once per PUSH_INTERVAL_SEC) when wheel spins move the volume.
     spotify_api.py uses this to push the change out to the actual device."""
     global _volume_change_listener
     _volume_change_listener = callback
