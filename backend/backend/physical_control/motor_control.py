@@ -26,7 +26,7 @@ DEFAULT_SPIN_SPEED_PERCENT = float(os.getenv("MOTOR_SPIN_SPEED_PERCENT", 50))
 # --system-site-packages to see it), lgpio software PWM at 1kHz. The earlier
 # design - pigpio's hardware_PWM() at 20kHz on the PWM peripheral - hasn't
 # driven the motor since the move to Trixie and channel A. 1kHz is audible;
-# lgpio offers up to ~8kHz if the whine matters, but only 1kHz is proven.
+# lgpio offers up to ~8kHz.
 PWM_FREQUENCY_HZ = int(os.getenv("MOTOR_PWM_FREQUENCY_HZ", 8000))
 
 # Kick-start, as in the bench test: a brushed motor's starting torque depends
