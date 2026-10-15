@@ -26,6 +26,12 @@ DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent / ".cache"
 _spotify_client = None
 _auth_manager = None
 
+# The active device's id and whether it accepts volume commands, from the last
+# playback poll. Phones typically report supports_volume=False (and a fixed
+# volume_percent of 100) and 403 any volume change.
+_device_id = None
+_device_supports_volume = True
+
 
 class SpotifyAuthRequired(Exception):
     """Raised when there's no usable cached token to talk to Spotify with.
@@ -112,9 +118,21 @@ def _sync_volume_from_device(playback):
     # (e.g. changed from a phone or the Spotify web player) every time we
     # poll for the current track. current_playback (unlike currently_playing)
     # includes the device's volume_percent for exactly this reason.
+    global _device_id, _device_supports_volume
     if not playback:
         return
-    volume_percent = (playback.get("device") or {}).get("volume_percent")
+    device = playback.get("device") or {}
+    supports_volume = device.get("supports_volume", True)
+    if device.get("id") != _device_id or supports_volume != _device_supports_volume:
+        if not supports_volume:
+            log.warning(
+                f"Spotify device '{device.get('name')}' doesn't allow volume control "
+                "through the Web API (phones usually don't) - the wheel can't set its volume"
+            )
+        _device_id = device.get("id")
+        _device_supports_volume = supports_volume
+
+    volume_percent = device.get("volume_percent")
     if volume_percent is not None:
         volume_control.set_current_volume(volume_percent)
 
@@ -271,6 +289,8 @@ def set_device_volume(volume_percent):
     # Called from volume.py's monitor thread, not a request — an exception
     # escaping here kills that thread for good, so SpotifyAuthRequired has to
     # be swallowed rather than propagated the way it is out of the routes.
+    if not _device_supports_volume:
+        return  # already warned in _sync_volume_from_device; it would just 403
     try:
         sp = get_spotify_client()
         sp.volume(int(volume_percent))

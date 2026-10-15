@@ -32,11 +32,16 @@ MONITOR_POLL_INTERVAL_SEC = float(os.getenv("VOLUME_MONITOR_POLL_INTERVAL_SEC", 
 # spin it up again and stop reading rotation as volume input.
 RESTART_IDLE_SEC = float(os.getenv("VOLUME_RESTART_IDLE_SEC", 2.0))
 
+# After the wheel changes the volume, ignore the device's reported volume for
+# this long. 
+DEVICE_SYNC_HOLD_SEC = float(os.getenv("VOLUME_DEVICE_SYNC_HOLD_SEC", 6.0))
+
 _lock = threading.Lock()
 _init_lock = threading.Lock()
 _monitor_started = False
 
 _current_volume = float(DEFAULT_VOLUME)
+_last_wheel_change_time = None  # monotonic; when the wheel last moved the volume
 
 # Invoked with the new int volume whenever a wheel spin pushes it across a
 # whole unit - lets spotify_api.py push that to the actual device without
@@ -77,7 +82,7 @@ def _apply_delta_locked(delta_degrees):
     """Advance volume by delta_degrees of wheel rotation, firing one haptic
     click per whole volume unit crossed. Caller holds _lock. Returns the new
     rounded volume if it crossed at least one unit, else None."""
-    global _current_volume
+    global _current_volume, _last_wheel_change_time
     if delta_degrees == 0:
         return None
 
@@ -85,6 +90,7 @@ def _apply_delta_locked(delta_degrees):
     new_volume = previous_volume + delta_degrees / DEGREES_PER_VOLUME_UNIT
     new_volume = max(VOLUME_MIN, min(VOLUME_MAX, new_volume))
     _current_volume = new_volume
+    _last_wheel_change_time = time.monotonic()
 
     # Encoder's positive direction is assumed wired to match motor_control's
     # DIRECTION_CW (+1) / DIRECTION_CCW (-1) - verify against real hardware,
@@ -125,6 +131,7 @@ def _monitor_loop():
             halted = now - _stillness_since >= HALT_TIME_SEC
 
             if halted and not _was_halted:
+                logger.info("Wheel halted; volume knob armed, motor stopped")
                 motor_control.stop()
                 _armed = True
                 _last_position = position  # start volume tracking fresh from the halt
@@ -142,6 +149,7 @@ def _monitor_loop():
                     # rotation the motor is about to produce is its own, and
                     # would otherwise read as the user spinning the volume up.
                     # Paused, the wheel just goes back to sitting still.
+                    logger.info(f"Volume knob idle; disarmed (motor {'spinning' if _motor_wanted else 'stays off'})")
                     if _motor_wanted:
                         motor_control.spin()
                     _armed = False
@@ -186,7 +194,12 @@ def set_playing(is_playing):
             return
         _motor_wanted = is_playing
         if _armed or _suspended:
+            logger.info(
+                f"Playback {'started' if is_playing else 'paused'}; motor change held "
+                f"while {'calibrating' if _suspended else 'the knob is armed'}"
+            )
             return
+        logger.info(f"Playback {'started' if is_playing else 'paused'}; motor {'spinning' if is_playing else 'stopping'}")
         if is_playing:
             motor_control.spin()
         else:
@@ -220,6 +233,7 @@ def resume():
         _rest_position = None
         _last_position = None
         _was_halted = True
+        logger.info(f"Wheel back from calibration; motor {'spinning' if _motor_wanted else 'stays off (not playing)'}")
         if _motor_wanted:
             motor_control.spin()
 
@@ -242,10 +256,18 @@ def get_current_volume():
 
 def set_current_volume(volume):
     """Seed/resync the tracked volume, e.g. from Spotify's actual device
-    volume at startup or after an out-of-band change (phone, web player)."""
+    volume at startup or after an out-of-band change (phone, web player).
+    Ignored while the user has the knob, and for DEVICE_SYNC_HOLD_SEC after
+    the wheel last moved the volume: Spotify reports the pre-change level
+    for a while, and taking it would snap the knob back."""
     _init()
     global _current_volume
     with _lock:
+        if _armed:
+            return
+        if (_last_wheel_change_time is not None
+                and time.monotonic() - _last_wheel_change_time < DEVICE_SYNC_HOLD_SEC):
+            return
         _current_volume = max(VOLUME_MIN, min(VOLUME_MAX, float(volume)))
 
 

@@ -16,7 +16,7 @@ GPIO_AIN2 = int(os.getenv("MOTOR_GPIO_AIN2", 27))
 DIRECTION_CW = 1
 DIRECTION_CCW = -1
 
-DEFAULT_SPIN_SPEED_PERCENT = 25
+DEFAULT_SPIN_SPEED_PERCENT = 50
 
 # True hardware PWM via pigpio.hardware_PWM(), not gpiozero/pigpio software
 # PWM - software PWM gets ragged above ~8kHz on a Zero 2 W and pigpio's

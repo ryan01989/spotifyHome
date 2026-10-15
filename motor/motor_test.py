@@ -55,6 +55,8 @@ def wheel(monkeypatch, motor_calls):
     monkeypatch.setattr(volume, "_motor_wanted", False)
     monkeypatch.setattr(volume, "_suspended", False)
     monkeypatch.setattr(volume, "_armed", False)
+    monkeypatch.setattr(volume, "_current_volume", 50.0)
+    monkeypatch.setattr(volume, "_last_wheel_change_time", None)
     monkeypatch.setattr(calibration, "_saved_steps_per_rev", None)
     monkeypatch.setattr(calibration, "_prompt_pending", False)
     monkeypatch.setattr(calibration, "_start_steps", None)
@@ -99,6 +101,43 @@ def test_suspend_holds_motor_until_resume(wheel, motor_calls):
     assert motor_calls == []
     volume.resume()
     assert motor_calls == ["spin"]
+
+
+def test_device_volume_syncs_when_wheel_idle(wheel):
+    volume.set_current_volume(80)
+    assert volume.get_current_volume() == 80
+
+
+def test_device_volume_ignored_while_knob_held(wheel, monkeypatch):
+    monkeypatch.setattr(volume, "_armed", True)
+    volume.set_current_volume(100)
+    assert volume.get_current_volume() == 50
+
+
+def test_device_volume_ignored_right_after_wheel_change(wheel, monkeypatch):
+    # Spotify reports the pre-change level for a while; that mustn't snap
+    # the knob back once it disarms.
+    with volume._lock:
+        volume._apply_delta_locked(9.0)  # +10 units
+    volume.set_current_volume(100)
+    assert volume.get_current_volume() == 60
+
+    monkeypatch.setattr(volume, "_last_wheel_change_time",
+                        volume._last_wheel_change_time - volume.DEVICE_SYNC_HOLD_SEC)
+    volume.set_current_volume(100)
+    assert volume.get_current_volume() == 100
+
+
+def test_no_volume_command_to_device_without_volume_control(wheel, monkeypatch):
+    from backend import spotify_api
+    monkeypatch.setattr(spotify_api, "_device_id", None)
+    monkeypatch.setattr(spotify_api, "_device_supports_volume", True)
+    monkeypatch.setattr(spotify_api, "get_spotify_client",
+                        lambda: pytest.fail("shouldn't talk to Spotify"))
+    spotify_api._sync_volume_from_device(
+        {"device": {"id": "phone", "name": "iPhone", "supports_volume": False, "volume_percent": 100}}
+    )
+    spotify_api.set_device_volume(40)
 
 
 def test_load_prompts_and_holds_the_wheel(wheel, calibration_file):
