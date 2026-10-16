@@ -6,11 +6,12 @@ const POLL_INTERVAL_MS = 200
 const HOLD_MS = 2000
 
 // Geometry in the display's own 720x720 pixels. The drawn path spans 86.37deg
-// so that the *visible* span including both round caps is exactly 90deg - a
+// so that the *visible* span including both round caps is exactly 180deg - a
 // quarter of the wheel's circumference, matching KNOB_ARC_DEGREES in
 // backend/backend/physical_control/volume.py. Radius 316 plus half the 20px
 // stroke clears the physical rim by 34px, so the bezel can't eat a cap.
-const ARC_PATH = 'M 143.81 129.53 A 316 316 0 0 1 576.19 129.53'
+const ARC_PATH = 'M 44.16 350.00 A 316 316 0 0 1 675.84 350.00'
+
 
 export default function VolumeArc() {
   const [volume, setVolume] = useState(null)

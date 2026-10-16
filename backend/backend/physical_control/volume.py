@@ -16,24 +16,26 @@ HALT_TIME_SEC = float(os.getenv("VOLUME_HALT_TIME_SEC", 0.5))
 VOLUME_MIN = 0
 VOLUME_MAX = 100
 
-# Virtual volume knob spans 1/4 of the wheel's circumference. Angular
+# Virtual volume knob spans 1/1 of the wheel's circumference. Angular
 # position is all the encoder gives us, so that's expressed as a quarter
-# turn (90 degrees) rather than a physical length. The user's position on
+# turn (180 degrees) rather than a physical length. The user's position on
 # the knob is volume/VOLUME_MAX along this arc - see get_knob_position_degrees().
-KNOB_ARC_FRACTION_OF_CIRCUMFERENCE = float(os.getenv("VOLUME_KNOB_ARC_FRACTION", 0.25))
+KNOB_ARC_FRACTION_OF_CIRCUMFERENCE = float(
+    os.getenv("VOLUME_KNOB_ARC_FRACTION", 0.50))
 KNOB_ARC_DEGREES = 360.0 * KNOB_ARC_FRACTION_OF_CIRCUMFERENCE
 DEGREES_PER_VOLUME_UNIT = KNOB_ARC_DEGREES / VOLUME_MAX
 
 DEFAULT_VOLUME = int(os.getenv("VOLUME_DEFAULT", 50))
 
-MONITOR_POLL_INTERVAL_SEC = float(os.getenv("VOLUME_MONITOR_POLL_INTERVAL_SEC", 0.02))
+MONITOR_POLL_INTERVAL_SEC = float(
+    os.getenv("VOLUME_MONITOR_POLL_INTERVAL_SEC", 0.02))
 
 # Once the user has left the wheel alone this long, hand it back to the motor:
 # spin it up again and stop reading rotation as volume input.
 RESTART_IDLE_SEC = float(os.getenv("VOLUME_RESTART_IDLE_SEC", 2.0))
 
 # After the wheel changes the volume, ignore the device's reported volume for
-# this long. 
+# this long.
 DEVICE_SYNC_HOLD_SEC = float(os.getenv("VOLUME_DEVICE_SYNC_HOLD_SEC", 6.0))
 
 # Stall: the motor has been told to spin but the wheel hasn't left the halt
@@ -42,7 +44,7 @@ STALL_SEC = float(os.getenv("MOTOR_STALL_SEC", 1.5))
 STALL_RETRY_SEC = float(os.getenv("MOTOR_STALL_RETRY_SEC", 10.0))
 
 # Pushes to the volume listener go out on their own thread, coalesced to the
-# latest value, at most one per PUSH_INTERVAL_SEC. 
+# latest value, at most one per PUSH_INTERVAL_SEC.
 PUSH_INTERVAL_SEC = float(os.getenv("VOLUME_PUSH_INTERVAL_SEC", 0.5))
 
 _lock = threading.Lock()
@@ -132,7 +134,8 @@ def _note_motor_motion_locked(delta_degrees):
     else:
         _sign_candidate, _sign_streak = sign, 1
     if _sign_streak >= SIGN_LEARN_STREAK and sign != _encoder_sign_for_cw:
-        logger.info(f"Encoder counts {'+' if sign > 0 else '-'} when the motor drives CW; clicks follow that")
+        logger.info(
+            f"Encoder counts {'+' if sign > 0 else '-'} when the motor drives CW; clicks follow that")
         _encoder_sign_for_cw = sign
 
 
@@ -155,8 +158,11 @@ def _apply_delta_locked(delta_degrees):
     moving_cw = (delta_degrees > 0) == (_encoder_sign_for_cw > 0)
     direction = motor_control.DIRECTION_CW if moving_cw else motor_control.DIRECTION_CCW
     units_crossed = abs(int(new_volume) - int(previous_volume))
-    for _ in range(units_crossed):
-        motor_control.step(direction)
+    # DISABLED FEATURE: Hapyic feedback (i.e. step) disabled for now.
+    # When expirmenting it just felt janky...brushed dc motor with
+    # gear movement doesnt bode well for it ig.
+    # for _ in range(units_crossed):
+    #    motor_control.step(direction)
 
     return round(new_volume) if units_crossed else None
 
@@ -205,7 +211,8 @@ def _tick(position, now):
                 # rotation the motor is about to produce is its own, and
                 # would otherwise read as the user spinning the volume up.
                 # Paused, the wheel just goes back to sitting still.
-                logger.info(f"Volume knob idle; disarmed (motor {'spinning' if _motor_wanted else 'stays off'})")
+                logger.info(
+                    f"Volume knob idle; disarmed (motor {'spinning' if _motor_wanted else 'stays off'})")
                 if _motor_wanted:
                     _spin_locked(now)
                 _armed = False
@@ -291,7 +298,8 @@ def set_playing(is_playing):
                 f"while {'calibrating' if _suspended else 'the knob is armed'}"
             )
             return
-        logger.info(f"Playback {'started' if is_playing else 'paused'}; motor {'spinning' if is_playing else 'stopping'}")
+        logger.info(
+            f"Playback {'started' if is_playing else 'paused'}; motor {'spinning' if is_playing else 'stopping'}")
         if is_playing:
             _spin_locked(time.monotonic())
         else:
@@ -305,7 +313,7 @@ def suspend():
     with _lock:
         # stop() rather than stop_immediately(): it ends coasting, where the
         # short brake would leave the wheel stiff to turn by hand. Only if the
-        # motor is actually running 
+        # motor is actually running
         if _motor_wanted and not _armed and not _suspended:
             _stop_locked()
         _suspended = True
@@ -325,7 +333,8 @@ def resume():
         _rest_position = None
         _last_position = None
         _was_halted = True
-        logger.info(f"Wheel back from calibration; motor {'spinning' if _motor_wanted else 'stays off (not playing)'}")
+        logger.info(
+            f"Wheel back from calibration; motor {'spinning' if _motor_wanted else 'stays off (not playing)'}")
         if _motor_wanted:
             _spin_locked(time.monotonic())
 
