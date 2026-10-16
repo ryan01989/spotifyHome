@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 
 const TAP_MAX_DISTANCE = 10
 const TAP_MAX_DURATION = 300
-export const SWIPE_THRESHOLD_PX = 180
+export const SWIPE_THRESHOLD_PX = 120
 export const SLIDE_OUT_DURATION_MS = 220
 const SLIDE_IN_DURATION_MS = 220
 
