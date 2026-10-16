@@ -118,7 +118,9 @@ commands as no-ops instead of crashing the app. You'll see one of:
 - `gpiozero not available; wheel encoder disabled`
 
 Both drive GPIO through gpiozero on lgpio (apt's `python3-lgpio`, visible
-because `make venv` builds with `--system-site-packages`). No daemon.
+because `make venv` builds with `--system-site-packages`). The motor's speed
+pin is kernel hardware PWM through sysfs instead, which needs
+`dtoverlay=pwm,pin=18,func=2` in `/boot/firmware/config.txt`. No daemon.
 
 The `/api/wheel_*` routes still respond; they just don't move anything.
 

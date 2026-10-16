@@ -109,6 +109,17 @@ touches `frontend/src`.
 4. **Boot to console instead of the desktop**, so nothing holds DRM master:
    `raspi-config` → System Options → Boot / Auto Login → Console.
 
+5. **Enable kernel PWM for the motor and install lgpio.** Add this line to
+   `/boot/firmware/config.txt`, then reboot:
+
+   ```
+   dtoverlay=pwm,pin=18,func=2
+   ```
+
+   Install lgpio with `sudo apt install python3-lgpio`. The venv sees it
+   because `make venv` builds with `--system-site-packages`; an older venv
+   needs `make clean && make venv`.
+
 ### Starting it
 
 Install the two systemd units — see [deploy/README.md](deploy/README.md):
@@ -160,10 +171,9 @@ these in the log and nothing else breaks:
 - `Motor GPIO init failed; motor control disabled: ...`
 - `gpiozero not available; wheel encoder disabled`
 
-On the Pi, look for `Motor control ready on LGPIOFactory` at the first motor
-command. `PiGPIOFactory` or `NativeFactory` there means the venv can't see apt's
-`python3-lgpio`. It has to be built with `--system-site-packages`, which
-`make venv` does.
+On the Pi, look for `Motor control ready: pins on LGPIOFactory, kernel PWM
+20000Hz on pwmchip0/pwm0` at the first motor command. Any factory other than
+`LGPIOFactory` means the venv can't see apt's `python3-lgpio`.
 
 The `/api/wheel_*` endpoints still respond; they just don't move anything.
 
@@ -178,7 +188,7 @@ The `/api/wheel_*` endpoints still respond; they just don't move anything.
 | UI is stale after a `git pull` on the Pi | `frontend/dist` wasn't rebuilt before the commit. |
 | Cog: `failed to schedule a page flip: Permission denied` | A desktop session (labwc) holds DRM master. `sudo systemctl stop lightdm` (killing labwc alone just respawns it), or boot to console. |
 | Cog `--platform=wl` segfaults | Known unresolved issue with labwc on VideoCore IV. Use `--platform=drm` with the desktop stopped. |
-| Motor commands do nothing on the Pi | Check the `Motor control ready on ...` log line. Not `LGPIOFactory` → `sudo apt install python3-lgpio` and rebuild the venv (`make clean && make venv`). `GPIO busy` → another process (a bench script, a second backend) holds the pins. |
+| Motor commands do nothing on the Pi | Check the `Motor control ready` / `Motor PWM init failed` log line. No `pwmchip0` → the `dtoverlay=pwm` line is missing from `config.txt` (reboot after adding). Not `LGPIOFactory` → `sudo apt install python3-lgpio` and rebuild the venv (`make clean && make venv`). `GPIO busy` → another process (a bench script, a second backend) holds the pins. |
 | `/api/*` returns 503 `spotify_auth_required` | No usable token cache — run `.venv/bin/python -m backend.authorize` in `backend/`. Also check the service's `WorkingDirectory`, since a missing `.cache` looks identical. |
 
 ---

@@ -12,8 +12,9 @@ Motor and wheel tests, in two parts:
 
        cd backend && .venv/bin/python ../motor/motor_test.py
 
-   Uses gpiozero on lgpio, like the backend. Stop the backend first: lgpio
-   claims the pins per process, so the second one gets "GPIO busy".
+   Uses gpiozero software PWM on GPIO18, so it only runs with the pwm
+   overlay *removed* from config.txt - with it, the kernel owns GPIO18. Stop
+   the backend first: lgpio claims pins per process ("GPIO busy").
 
    With --sweep it instead drives the backend's own motor_control (20kHz
    hardware PWM) through a range of speeds and prints the wheel's measured
@@ -111,6 +112,35 @@ def test_suspend_holds_motor_until_resume(wheel, motor_calls):
     assert motor_calls == []
     volume.resume()
     assert motor_calls == ["spin"]
+
+
+def test_kernel_pwm_sets_period_and_duty(tmp_path):
+    channel = tmp_path / "pwm0"
+    channel.mkdir()
+    for name in ("duty_cycle", "period", "enable"):
+        (channel / name).write_text("0")
+
+    pwm = motor_control._KernelPWM(tmp_path, 0, 20000)
+    assert (channel / "period").read_text() == "50000"  # 1e9 / 20kHz
+    assert (channel / "enable").read_text() == "1"
+
+    pwm.value = 0.3
+    assert (channel / "duty_cycle").read_text() == "15000"
+    assert pwm.value == 0.3
+
+
+def test_spin_from_rest_kicks_twenty_percent_over(monkeypatch):
+    monkeypatch.setattr(motor_control, "_init_hardware", lambda: None)
+    monkeypatch.setattr(motor_control, "_current_speed_percent", 0.0)
+    monkeypatch.setattr(motor_control, "KICK_DURATION_S", 0.05)
+
+    motor_control.spin(30)
+    assert motor_control._current_speed_percent == pytest.approx(36)
+    time.sleep(0.15)
+    assert motor_control._current_speed_percent == 30
+
+    motor_control.spin(40)  # already moving: no kick
+    assert motor_control._current_speed_percent == 40
 
 
 def test_stalled_motor_stops_and_retries(wheel, motor_calls):
@@ -367,7 +397,7 @@ def main():
         motor.close()
 
 
-SWEEP_SPEEDS = (30, 40, 50, 60, 70, 80, 90, 100)
+SWEEP_SPEEDS = (15, 20, 25, 30, 40, 50, 70, 100)
 
 
 def sweep():
