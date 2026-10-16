@@ -16,8 +16,8 @@ GPIO_AIN2 = int(os.getenv("MOTOR_GPIO_AIN2", 27))
 # driver owns it via `dtoverlay=pwm,pin=18,func=2` in /boot/firmware/config.txt.
 GPIO_PWMA = 18
 
-DIRECTION_CW = 1
-DIRECTION_CCW = -1
+DIRECTION_CW = -1
+DIRECTION_CCW = 1
 
 # 30% at 20kHz turns the wheel ~16 rev/min, smooth and quiet on the real
 # build - comfortably above the ~22deg/s volume.py needs to not read the
@@ -31,7 +31,8 @@ DEFAULT_SPIN_SPEED_PERCENT = float(os.getenv("MOTOR_SPIN_SPEED_PERCENT", 30))
 # hardware_PWM() on the same peripheral never drove the motor on Trixie.)
 PWM_FREQUENCY_HZ = int(os.getenv("MOTOR_PWM_FREQUENCY_HZ", 20000))
 PWM_CHIP = Path(os.getenv("MOTOR_PWM_CHIP", "/sys/class/pwm/pwmchip0"))
-PWM_CHANNEL = int(os.getenv("MOTOR_PWM_CHANNEL", 0))  # GPIO18 is PWM0 channel 0
+PWM_CHANNEL = int(os.getenv("MOTOR_PWM_CHANNEL", 0)
+                  )  # GPIO18 is PWM0 channel 0
 
 # After exporting a channel, udev chgrps its files to `gpio` a moment later;
 # writes before that fail with PermissionError for a non-root user.
@@ -51,7 +52,7 @@ CONTROLLED_STOP_STEP_S = 0.02
 # step(): brief opposing pulse volume.py uses for a physical "click". 40%
 # barely cleared the drivetrain's friction and felt like slop rather than a
 # detent - a click wants full force, kept short.
-STEP_SPEED_PERCENT = float(os.getenv("MOTOR_STEP_SPEED_PERCENT", 80))
+STEP_SPEED_PERCENT = float(os.getenv("MOTOR_STEP_SPEED_PERCENT", 30))
 STEP_DURATION_S = float(os.getenv("MOTOR_STEP_DURATION_S", 0.04))
 
 # This module doesn't report whether the wheel is moving under its own power.
@@ -103,7 +104,8 @@ class _KernelPWM:
 
     @value.setter
     def value(self, fraction):
-        self._write("duty_cycle", round(self._period_ns * max(0.0, min(1.0, fraction))))
+        self._write("duty_cycle", round(
+            self._period_ns * max(0.0, min(1.0, fraction))))
 
 
 def _init_hardware():
@@ -130,7 +132,8 @@ def _init_hardware():
             in2 = DigitalOutputDevice(GPIO_AIN2, initial_value=False)
             stby = DigitalOutputDevice(GPIO_STBY, initial_value=False)
         except Exception as e:
-            logger.warning(f"Motor GPIO init failed; motor control disabled: {e}")
+            logger.warning(
+                f"Motor GPIO init failed; motor control disabled: {e}")
             return
 
         try:
@@ -143,7 +146,8 @@ def _init_hardware():
                 if not PWM_CHIP.exists()
                 else "is this user in the `gpio` group?"
             )
-            logger.warning(f"Motor PWM init failed ({e}); motor control disabled - {hint}")
+            logger.warning(
+                f"Motor PWM init failed ({e}); motor control disabled - {hint}")
             return
 
         stby.on()  # take the driver out of standby
