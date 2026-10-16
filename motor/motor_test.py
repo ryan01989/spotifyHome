@@ -68,6 +68,9 @@ def wheel(monkeypatch, motor_calls):
     monkeypatch.setattr(volume, "_stillness_since", 0.0)
     monkeypatch.setattr(volume, "_was_halted", True)
     monkeypatch.setattr(volume, "_pending_push", None)
+    monkeypatch.setattr(volume, "_encoder_sign_for_cw", 1)
+    monkeypatch.setattr(volume, "_sign_candidate", 0)
+    monkeypatch.setattr(volume, "_sign_streak", 0)
     monkeypatch.setattr(calibration, "_saved_steps_per_rev", None)
     monkeypatch.setattr(calibration, "_prompt_pending", False)
     monkeypatch.setattr(calibration, "_start_steps", None)
@@ -141,6 +144,33 @@ def test_spin_from_rest_kicks_twenty_percent_over(monkeypatch):
 
     motor_control.spin(40)  # already moving: no kick
     assert motor_control._current_speed_percent == 40
+
+
+def test_click_opposes_encoder_motion_once_sign_is_learned(wheel, monkeypatch):
+    steps = []
+    monkeypatch.setattr(motor_control, "step", lambda direction, *a, **kw: steps.append(direction))
+
+    # Motor drives CW; this encoder counts *down* while it does.
+    volume.set_playing(True)
+    t0 = volume._spin_commanded_at
+    for i in range(5):
+        volume._tick(-22.5 * i, t0 + 0.2 * i)
+    assert volume._encoder_sign_for_cw == -1
+
+    # The user turns the wheel so the encoder counts up - in motor terms
+    # that's CCW, so the click must push CW.
+    with volume._lock:
+        volume._apply_delta_locked(11.25)
+    assert steps and set(steps) == {motor_control.DIRECTION_CCW}  # movement passed to step()
+
+
+def test_brief_drag_against_motor_does_not_flip_sign(wheel):
+    volume.set_playing(True)
+    t0 = volume._spin_commanded_at
+    positions = [0, 22.5, 45, 22.5, 45, 67.5]  # one backwards excursion
+    for i, p in enumerate(positions):
+        volume._tick(p, t0 + 0.2 * i)
+    assert volume._encoder_sign_for_cw == 1
 
 
 def test_stalled_motor_stops_and_retries(wheel, motor_calls):

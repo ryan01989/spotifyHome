@@ -52,8 +52,8 @@ CONTROLLED_STOP_STEP_S = 0.02
 # step(): brief opposing pulse volume.py uses for a physical "click". 40%
 # barely cleared the drivetrain's friction and felt like slop rather than a
 # detent - a click wants full force, kept short.
-STEP_SPEED_PERCENT = float(os.getenv("MOTOR_STEP_SPEED_PERCENT", 30))
-STEP_DURATION_S = float(os.getenv("MOTOR_STEP_DURATION_S", 0.04))
+STEP_SPEED_PERCENT = float(os.getenv("MOTOR_STEP_SPEED_PERCENT", 40))
+STEP_DURATION_S = float(os.getenv("MOTOR_STEP_DURATION_S", 0.06))
 
 # This module doesn't report whether the wheel is moving under its own power.
 # volume.py tells motor motion from user motion by when it's armed (between a

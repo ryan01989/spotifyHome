@@ -87,6 +87,18 @@ _suspended = False
 _spin_commanded_at = None
 _stall_retry_at = None
 
+# Which way the encoder counts (+1/-1) while the motor drives CW. It's down to
+# how the sensors and motor are mounted, and getting it wrong turns every
+# haptic click into a push *with* the user instead of against them. Learned
+# from the motor's own spins (see _note_motor_motion_locked); the env value
+# is only the guess until the first spin. Takes SIGN_LEARN_STREAK same-sign
+# excursions in a row, so a hand briefly dragging against the motor can't
+# flip it.
+_encoder_sign_for_cw = int(os.getenv("ENCODER_SIGN_FOR_CW", 1))
+SIGN_LEARN_STREAK = 3
+_sign_candidate = 0
+_sign_streak = 0
+
 
 def _halt_deadzone_degrees():
     if _HALT_DEADZONE_OVERRIDE is not None:
@@ -110,6 +122,20 @@ def _stop_locked():
     _stall_retry_at = None
 
 
+def _note_motor_motion_locked(delta_degrees):
+    """Record which way the encoder moved while the motor drove CW (every
+    spin this module commands is CW). Caller holds _lock."""
+    global _encoder_sign_for_cw, _sign_candidate, _sign_streak
+    sign = 1 if delta_degrees > 0 else -1
+    if sign == _sign_candidate:
+        _sign_streak += 1
+    else:
+        _sign_candidate, _sign_streak = sign, 1
+    if _sign_streak >= SIGN_LEARN_STREAK and sign != _encoder_sign_for_cw:
+        logger.info(f"Encoder counts {'+' if sign > 0 else '-'} when the motor drives CW; clicks follow that")
+        _encoder_sign_for_cw = sign
+
+
 def _apply_delta_locked(delta_degrees):
     """Advance volume by delta_degrees of wheel rotation, firing one haptic
     click per whole volume unit crossed. Caller holds _lock. Returns the new
@@ -124,10 +150,10 @@ def _apply_delta_locked(delta_degrees):
     _current_volume = new_volume
     _last_wheel_change_time = time.monotonic()
 
-    # Encoder's positive direction is assumed wired to match motor_control's
-    # DIRECTION_CW (+1) / DIRECTION_CCW (-1) - verify against real hardware,
-    # same caveat as encoder.py's NUM_POLES TODO.
-    direction = motor_control.DIRECTION_CW if delta_degrees > 0 else motor_control.DIRECTION_CCW
+    # The wheel's motion in motor terms, from the encoder's sign: step()
+    # pushes opposite it, i.e. against what the encoder detected.
+    moving_cw = (delta_degrees > 0) == (_encoder_sign_for_cw > 0)
+    direction = motor_control.DIRECTION_CW if moving_cw else motor_control.DIRECTION_CCW
     units_crossed = abs(int(new_volume) - int(previous_volume))
     for _ in range(units_crossed):
         motor_control.step(direction)
@@ -152,6 +178,8 @@ def _tick(position, now):
         if _rest_position is None:
             _rest_position = position
         elif abs(position - _rest_position) > _halt_deadzone_degrees():
+            if not _armed and _spin_commanded_at is not None:
+                _note_motor_motion_locked(position - _rest_position)
             _rest_position = position
             _stillness_since = now
         halted = now - _stillness_since >= HALT_TIME_SEC
